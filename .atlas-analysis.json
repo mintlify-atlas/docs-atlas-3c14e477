@@ -1,0 +1,104 @@
+{
+  "projectType": "saas",
+  "projectName": "Lurwis CRM",
+  "projectDescription": "Real-time dashboard for managing restaurant orders from WhatsApp with Kanban workflow and live analytics.",
+  "theme": "almond",
+  "primaryColor": "#fbc926",
+  "lightColor": "#8c73fa",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/realtime-orders",
+              "features/kanban-workflow",
+              "features/dashboard-analytics",
+              "features/order-history"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/supabase-setup",
+              "configuration/environment-variables",
+              "configuration/webhooks",
+              "configuration/authentication"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/local-setup",
+              "development/project-structure",
+              "development/deployment"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Services",
+            "pages": [
+              "api/pedidos-service",
+              "api/platos-service",
+              "api/auth-service",
+              "api/webhook-service"
+            ]
+          },
+          {
+            "group": "Hooks",
+            "pages": [
+              "api/use-pedidos-realtime",
+              "api/use-dashboard",
+              "api/use-platos",
+              "api/use-pedidos-historial"
+            ]
+          },
+          {
+            "group": "Context",
+            "pages": [
+              "api/auth-context",
+              "api/notifications-context"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time order management with Supabase Realtime",
+    "Kanban board for order workflow (pending → kitchen → delivery → completed)",
+    "Live dashboard with sales analytics and peak hours visualization",
+    "WhatsApp integration via webhooks (N8N/Make/Zapier)",
+    "Order history with filtering by payment method and date range",
+    "Authentication with Supabase Auth",
+    "Real-time notifications for new orders and status changes"
+  ],
+  "publicApiSurface": [
+    "getPedidosActivos() - Fetch active orders for Kanban board",
+    "getPedidosHistorial() - Fetch order history with filters",
+    "updateEstadoPedido() - Update order status in workflow",
+    "cancelarPedido() - Cancel an order",
+    "getStatsDashboard() - Fetch data for dashboard analytics",
+    "calcularStats() - Calculate KPIs from order data",
+    "usePedidosRealtime() - Hook for real-time order synchronization",
+    "useDashboard() - Hook for dashboard statistics",
+    "usePlatos() - Hook for menu items management",
+    "AuthContext - Authentication state management",
+    "NotificationsContext - Real-time notification system"
+  ]
+}
