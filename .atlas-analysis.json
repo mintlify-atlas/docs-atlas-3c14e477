@@ -25,7 +25,8 @@
               "features/realtime-orders",
               "features/kanban-workflow",
               "features/dashboard-analytics",
-              "features/order-history"
+              "features/order-history",
+              "features/menu-management"
             ]
           },
           {
@@ -83,6 +84,7 @@
     "Real-time order management with Supabase Realtime",
     "Kanban board for order workflow (pending → kitchen → delivery → completed)",
     "Live dashboard with sales analytics and peak hours visualization",
+    "Menu management with dish CRUD operations and availability toggling",
     "WhatsApp integration via webhooks (N8N/Make/Zapier)",
     "Order history with filtering by payment method and date range",
     "Authentication with Supabase Auth",

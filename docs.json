@@ -42,7 +42,8 @@
               "features/realtime-orders",
               "features/kanban-workflow",
               "features/dashboard-analytics",
-              "features/order-history"
+              "features/order-history",
+              "features/menu-management"
             ]
           },
           {
