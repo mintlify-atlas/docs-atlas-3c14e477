@@ -1,0 +1,189 @@
+---
+title: "usePedidosRealtime"
+description: "Real-time order management hook with Supabase subscriptions for the Kanban board"
+---
+
+## Overview
+
+The `usePedidosRealtime` hook provides real-time order tracking with Supabase Realtime subscriptions. It manages active orders across the Kanban workflow states and automatically updates when orders are inserted or updated in the database.
+
+## Location
+
+`src/hooks/usePedidosRealtime.js`
+
+## Usage
+
+```javascript
+import { usePedidosRealtime } from "../hooks/usePedidosRealtime";
+
+function PedidosPage() {
+  const { columns, loading, error, avanzarEstado, cancelar, recargar } = usePedidosRealtime();
+
+  const handleAction = async (card) => {
+    await avanzarEstado(card);
+  };
+
+  const handleCancel = async (card) => {
+    if (!window.confirm(`¿Cancelar el pedido de ${card.cliente_nombre}?`)) return;
+    await cancelar(card);
+  };
+
+  const activeCount = columns
+    .filter((c) => c.id !== "completado")
+    .reduce((acc, c) => acc + c.cards.length, 0);
+
+  return (
+    <div>
+      <h1>Pedidos en Vivo - {activeCount} Activos</h1>
+      {/* Render Kanban columns */}
+    </div>
+  );
+}
+```
+
+## Return Value
+
+The hook returns an object with the following properties:
+
+<ResponseField name="columns" type="array" required>
+  Array of Kanban columns, each containing orders grouped by their `estado_pedido`. Each column has:
+  
+  <Expandable title="Column Structure">
+    <ResponseField name="id" type="string">
+      The estado_pedido value: `"pendiente"`, `"cocina"`, `"entregar"`, or `"completado"`
+    </ResponseField>
+    <ResponseField name="cards" type="array">
+      Array of order objects in this state. For `"completado"` state, limited to the 3 most recent orders.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="loading" type="boolean" required>
+  `true` during initial data fetch, `false` once loaded
+</ResponseField>
+
+<ResponseField name="error" type="string | null" required>
+  Error message if the initial load failed, otherwise `null`
+</ResponseField>
+
+<ResponseField name="avanzarEstado" type="function" required>
+  Advances an order to the next state in the workflow
+  
+  ```javascript
+  async (pedido: Order) => void
+  ```
+  
+  **Workflow:**
+  - `pendiente` → `cocina` (triggers webhookPedidoAceptado)
+  - `cocina` → `entregar` (triggers webhookPedidoListo)
+  - `entregar` → `completado` (triggers webhookPedidoDespachado or webhookPedidoCompletado based on tipo_servicio)
+  
+  Updates state locally and sends webhook notifications.
+</ResponseField>
+
+<ResponseField name="cancelar" type="function" required>
+  Cancels an order at any stage
+  
+  ```javascript
+  async (pedido: Order) => void
+  ```
+  
+  Sets `estado_pedido` to `"cancelado"` and triggers webhookPedidoCancelado.
+</ResponseField>
+
+<ResponseField name="recargar" type="function" required>
+  Manually reloads all active orders from the database
+  
+  ```javascript
+  async () => void
+  ```
+</ResponseField>
+
+## Order Object Structure
+
+Each order in the `cards` arrays contains:
+
+```typescript
+{
+  id: string,                    // UUID
+  telefono: string,
+  cliente_nombre: string,
+  detalle_pedido: Array<{        // JSONB array
+    nombre: string,
+    cantidad: number,
+    precio: number
+  }>,
+  total_estimado: number,
+  total_final: number | null,
+  metodo_pago: "Yape" | "Plin" | "Efectivo" | "Tarjeta",
+  tipo_servicio: "delivery" | "recojo",
+  estado_pedido: "pendiente" | "cocina" | "entregar" | "completado" | "cancelado",
+  direccion: string,
+  created_at: string             // ISO timestamp
+}
+```
+
+## Realtime Subscription Lifecycle
+
+### 1. Initial Load
+- Fetches all active orders using `getPedidosActivos()`
+- Sets `inicializado.current = true` after first load
+
+### 2. Realtime Channel Setup
+Subscribes to the `pedidos-picanteria-realtime` channel with two listeners:
+
+**INSERT Events:**
+- Triggers when a new order is created (e.g., from WhatsApp bot)
+- Automatically adds order to Kanban if `estado_pedido` is in `["pendiente", "cocina", "entregar", "completado"]`
+- Shows notification (only after initial load completes)
+
+**UPDATE Events:**
+- Triggers when any order field changes
+- Updates the order in local state if it already exists
+- Ignores updates for orders not currently displayed
+
+### 3. Cleanup
+- Removes the Supabase channel subscription when component unmounts
+
+## Constants
+
+```javascript
+const COLUMN_ORDER = ["pendiente", "cocina", "entregar", "completado"];
+const MAX_COMPLETADOS = 3;  // Limit completed orders shown to 3 most recent
+```
+
+## Dependencies
+
+- `supabase` - Supabase client for Realtime subscriptions
+- `getPedidosActivos` - Service function from `src/services/pedidosService.js`
+- `updateEstadoPedido` - Service function to update order state
+- `cancelarPedido` - Service function to cancel orders
+- Webhook services from `src/services/webhookService.js`
+- `useNotifications` - Context for push notifications
+
+## Side Effects
+
+1. **Automatic Webhooks:** State transitions trigger outbound webhooks to external systems (non-blocking)
+2. **Push Notifications:** New and completed orders trigger browser notifications
+3. **Local State Updates:** Both manual actions and Realtime events update local state immediately
+
+## Database Requirements
+
+<Warning>
+Realtime must be enabled on the `pedidos_picanteria` table:
+
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE pedidos_picanteria;
+```
+</Warning>
+
+## Error Handling
+
+- Initial load errors are stored in the `error` state
+- State transition errors are logged to console but don't affect UI state
+- Webhook failures are logged as warnings (non-blocking)
+
+## Related
+
+- [usePedidosHistorial](/api/use-pedidos-historial) - Historical order queries
+- [Pedidos Service](/api/pedidos-service) - Order management service with getPedidosActivos function

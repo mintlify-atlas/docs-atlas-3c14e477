@@ -1,0 +1,208 @@
+---
+title: "useDashboard"
+description: "Dashboard statistics hook with date filtering and KPI calculations"
+---
+
+## Overview
+
+The `useDashboard` hook provides computed statistics and KPIs for the dashboard page. It loads all orders and calculates metrics based on a selected time period, with client-side date filtering to avoid timezone issues.
+
+## Location
+
+`src/hooks/useDashboard.js`
+
+## Usage
+
+```javascript
+import { useDashboard } from "../hooks/useDashboard";
+
+function DashboardPage() {
+  const [selectedPeriod, setSelectedPeriod] = useState("Hoy");
+  const { stats, loading, error, recargar } = useDashboard(selectedPeriod);
+
+  // Format helpers
+  const fmt = (n) => `S/ ${Number(n ?? 0).toFixed(2)}`;
+  const pct = (n) => `${n ?? 0}%`;
+
+  return (
+    <div>
+      <h2>Total Ingresos: {fmt(stats?.totalIngresos)}</h2>
+      <h3>Ticket Promedio: {fmt(stats?.ticketPromedio)}</h3>
+      <p>Tasa de Éxito: {pct(stats?.tasaExito)}</p>
+      
+      {/* Top 5 platos */}
+      {stats?.topPlatos.map(({ plato, count }) => (
+        <div key={plato}>{plato}: {count}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Parameters
+
+<ParamField path="periodo" type="string" required>
+  The time period filter for statistics calculation
+  
+  **Valid values:**
+  - `"Hoy"` - Today only (00:00 to current time)
+  - `"Esta Semana"` - Current week (Monday to today)
+  - `"Este Mes"` - Current month (1st to today)
+  - Any other value returns all-time stats
+</ParamField>
+
+## Return Value
+
+<ResponseField name="stats" type="object | null" required>
+  Computed statistics object, `null` while loading. Contains:
+  
+  <Expandable title="Stats Structure">
+    <ResponseField name="totalIngresos" type="number">
+      Total revenue from completed orders (uses `total_final` or falls back to `total_estimado`)
+    </ResponseField>
+    
+    <ResponseField name="ticketPromedio" type="number">
+      Average order value (totalIngresos / number of completed orders)
+    </ResponseField>
+    
+    <ResponseField name="tasaExito" type="number">
+      Success rate percentage (non-canceled orders / total orders * 100)
+    </ResponseField>
+    
+    <ResponseField name="totalPedidos" type="number">
+      Total number of orders in the period (excluding canceled)
+    </ResponseField>
+    
+    <ResponseField name="delivery" type="number">
+      Count of delivery orders (tipo_servicio === "delivery")
+    </ResponseField>
+    
+    <ResponseField name="recojo" type="number">
+      Count of pickup orders (tipo_servicio === "recojo")
+    </ResponseField>
+    
+    <ResponseField name="topPlatos" type="array">
+      Array of top 5 dishes by total quantity ordered (not by number of orders)
+      
+      ```typescript
+      Array<{
+        plato: string,  // Dish name (normalized to official platos.nombre)
+        count: number   // Total quantity ordered across all orders
+      }>
+      ```
+      
+      Note: Counts actual quantities from detalle_pedido, not order counts.
+    </ResponseField>
+    
+    <ResponseField name="porPago" type="object">
+      Order count grouped by payment method
+      
+      ```typescript
+      {
+        "Yape"?: number,
+        "Plin"?: number,
+        "Efectivo"?: number,
+        "Tarjeta"?: number
+      }
+      ```
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="loading" type="boolean" required>
+  `true` during data fetch, `false` once loaded
+</ResponseField>
+
+<ResponseField name="error" type="string | null" required>
+  Error message if data fetch failed, otherwise `null`
+</ResponseField>
+
+<ResponseField name="recargar" type="function" required>
+  Manually reloads all data from the database
+  
+  ```javascript
+  async () => void
+  ```
+</ResponseField>
+
+## Date Range Calculation
+
+The hook exports a utility function for calculating date ranges:
+
+```javascript
+import { getRangoDashboard } from "../hooks/useDashboard";
+
+const rango = getRangoDashboard("Esta Semana");
+// { desde: Date, hasta: Date }
+```
+
+### Date Range Logic
+
+- **"Hoy"**: 00:00 today → 00:00 tomorrow
+- **"Esta Semana"**: Monday 00:00 → 00:00 tomorrow
+- **"Este Mes"**: 1st of month 00:00 → 00:00 tomorrow
+- **Other**: Epoch (1970) → 00:00 tomorrow
+
+All times use local timezone, with filtering done client-side to avoid Supabase timezone conversion issues.
+
+## Data Flow
+
+1. **Initial Load:**
+   - Fetches ALL orders via `getStatsDashboard()` (no date filter)
+   - Fetches active dish names from `platos` table
+   - Both requests run in parallel
+
+2. **Client-Side Filtering:**
+   - Filters orders by `created_at` based on `periodo`
+   - Ensures correct local timezone handling
+
+3. **Statistics Calculation:**
+   - Calls `calcularStats(filteredOrders, dishNames)`
+   - Normalizes dish names in top 5 using official platos.nombre
+   - Counts actual item quantities from detalle_pedido arrays
+
+## Dependencies
+
+- `getStatsDashboard` - Service function from `src/services/pedidosService.js`
+- `calcularStats` - Statistics computation function from `src/services/pedidosService.js`
+- `supabase` - Direct query for dish names
+
+## Side Effects
+
+None. This hook only reads data and performs calculations.
+
+## Error Handling
+
+### Critical Error
+If `getStatsDashboard()` fails, the hook sets `error` state and stops execution.
+
+### Non-Critical Error
+If fetching dish names fails:
+- Logs warning to console
+- Sets `nombresPlatos = []`
+- Top 5 continues to work but without name normalization
+
+## Statistics Calculation Details
+
+### Top Platos Logic
+
+The hook counts **total quantities** of each dish across all orders, not the number of orders containing the dish.
+
+**Example:**
+```javascript
+// Order 1: detalle_pedido = [{nombre:"Ceviche",cantidad:2}, {nombre:"Chicha",cantidad:1}]
+// Order 2: detalle_pedido = [{nombre:"Ceviche",cantidad:1}]
+
+// Result: Ceviche: 3 (not 2 orders), Chicha: 1
+```
+
+### Name Normalization
+
+Dish names from orders are matched against official `platos.nombre` values:
+- Uses fuzzy matching (case-insensitive, space normalization)
+- Helps consolidate variations like "Ceviche Clasico" vs "Ceviche clásico"
+
+## Related
+
+- [usePedidosHistorial](/api/use-pedidos-historial) - Historical order queries with filters
+- [Pedidos Service](/api/pedidos-service) - Order management service with calcularStats and getStatsDashboard functions

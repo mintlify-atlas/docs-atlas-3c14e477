@@ -1,0 +1,387 @@
+---
+title: 'Project Structure'
+description: 'Understanding the Lurwis CRM codebase organization and key files'
+---
+
+This guide explains the directory structure and organization of the Lurwis CRM codebase.
+
+## Overview
+
+Lurwis CRM is built with React 19, Vite, and Supabase. The application follows a standard React project structure with clear separation of concerns.
+
+## Root Directory
+
+```
+crm-lurwis/
+├── src/                 # Source code
+├── public/              # Static assets
+├── node_modules/        # Dependencies (git-ignored)
+├── dist/                # Production build output (git-ignored)
+├── index.html           # HTML entry point
+├── package.json         # Project configuration and dependencies
+├── vite.config.js       # Vite bundler configuration
+├── tailwind.config.js   # Tailwind CSS configuration
+├── eslint.config.js     # ESLint linting rules
+├── vercel.json          # Vercel deployment configuration
+└── .env                 # Environment variables (git-ignored)
+```
+
+## Source Directory Structure
+
+The `src/` directory contains all application source code:
+
+```
+src/
+├── assets/              # Images, icons, and static files
+├── components/          # Reusable UI components
+├── config/              # Application configuration
+├── context/             # React Context providers
+├── hooks/               # Custom React hooks
+├── layouts/             # Layout components and route protection
+├── lib/                 # Third-party library configurations
+├── pages/               # Page components (routes)
+├── services/            # API and business logic services
+├── utils/               # Utility functions and helpers
+├── App.jsx              # Root application component with routing
+├── main.jsx             # Application entry point
+└── index.css            # Global styles and Tailwind imports
+```
+
+## Key Directories Explained
+
+### `/src/pages/`
+
+Page components that map to routes. Each page represents a distinct view in the application.
+
+| File | Route | Purpose |
+|------|-------|----------|
+| `LoginPage.jsx` | `/login` | User authentication and login |
+| `DashboardPage.jsx` | `/` | Main dashboard with metrics and overview |
+| `PedidosPage.jsx` | `/pedidos` | Active orders management |
+| `HistorialPage.jsx` | `/historial` | Order history and past records |
+| `ConfiguracionPage.jsx` | `/config` | Application settings and configuration |
+| `ChatsPage.jsx` | `/chats` | Customer chat interface (future feature) |
+
+**Location:** `src/pages/DashboardPage.jsx`
+
+### `/src/components/`
+
+Reusable UI components shared across multiple pages.
+
+| Component | Purpose |
+|-----------|----------|
+| `Header.jsx` | Top navigation bar with user info and actions |
+| `Sidebar.jsx` | Main navigation sidebar with menu items |
+
+**Example usage:**
+```jsx
+import Header from './components/Header';
+import Sidebar from './components/Sidebar';
+```
+
+### `/src/layouts/`
+
+Layout components that wrap pages and provide structure.
+
+| Layout | Purpose |
+|--------|----------|
+| `MainLayout.jsx` | Main application layout with sidebar and header |
+| `ProtectedRoute.jsx` | Route guard that requires authentication |
+
+**Key feature:** `ProtectedRoute.jsx` checks for user session and redirects to `/login` if not authenticated.
+
+**Location:** `src/layouts/ProtectedRoute.jsx`
+
+### `/src/context/`
+
+React Context providers for global state management.
+
+| Context | State Managed | Usage |
+|---------|---------------|--------|
+| `AuthContext.jsx` | User authentication state, login/logout | Provides `useAuth()` hook |
+| `NotificationsContext.jsx` | In-app notifications and alerts | Provides `useNotifications()` hook |
+
+**Example:**
+```jsx
+import { useAuth } from '../context/AuthContext';
+
+const { user, signOut } = useAuth();
+```
+
+**Location:** `src/context/AuthContext.jsx`
+
+### `/src/hooks/`
+
+Custom React hooks for data fetching and state management.
+
+| Hook | Purpose | Returns |
+|------|---------|----------|
+| `useDashboard.js` | Fetches dashboard metrics and statistics | `{ stats, loading, error }` |
+| `usePedidosRealtime.js` | Real-time order updates via Supabase | `{ orders, loading }` |
+| `usePedidosHistorial.js` | Historical order data with pagination | `{ history, loading, loadMore }` |
+| `usePlatos.js` | Menu items and dishes management | `{ dishes, addDish, updateDish }` |
+
+**Example usage:**
+```jsx
+import usePedidosRealtime from '../hooks/usePedidosRealtime';
+
+const { orders, loading } = usePedidosRealtime();
+```
+
+**Location:** `src/hooks/usePedidosRealtime.js`
+
+### `/src/services/`
+
+Business logic and API communication layer.
+
+| Service | Responsibility |
+|---------|----------------|
+| `authService.js` | User authentication (login, logout, session management) |
+| `pedidosService.js` | Order CRUD operations and status updates |
+| `platosService.js` | Menu item management |
+| `webhookService.js` | Webhook handling for external integrations |
+
+**Pattern:** Services abstract Supabase queries and provide clean APIs to components.
+
+**Example:**
+```javascript
+// src/services/pedidosService.js
+import { supabase } from '../lib/supabase';
+
+export const getPedidos = async () => {
+  const { data, error } = await supabase
+    .from('pedidos')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (error) throw error;
+  return data;
+};
+```
+
+**Location:** `src/services/pedidosService.js`
+
+### `/src/lib/`
+
+Third-party library configurations and clients.
+
+| File | Purpose |
+|------|----------|
+| `supabase.js` | Supabase client initialization with environment variables |
+
+**Configuration:**
+```javascript
+// src/lib/supabase.js
+import { createClient } from "@supabase/supabase-js";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+```
+
+<Warning>
+  The Supabase client validates environment variables at startup. Missing credentials will log an error to the console.
+</Warning>
+
+**Location:** `src/lib/supabase.js`
+
+### `/src/utils/`
+
+Utility functions and helper methods.
+
+| File | Purpose |
+|------|----------|
+| `pedidosUtils.js` | Order-related formatting, calculations, and transformations |
+
+**Example utilities:**
+- Date formatting for orders
+- Status badge color mapping
+- Price calculations and formatting
+
+### `/src/config/`
+
+Application configuration constants.
+
+| File | Purpose |
+|------|----------|
+| `brand.js` | Brand colors, logo, and theme configuration |
+
+**Example:**
+```javascript
+// src/config/brand.js
+export const brandConfig = {
+  name: 'Lurwis',
+  primaryColor: '#FF6B35',
+  logo: '/Picanterialurwis.jpg'
+};
+```
+
+## Key Files
+
+### `src/App.jsx`
+
+Root application component that sets up routing and context providers.
+
+**Key features:**
+- React Router configuration with `createBrowserRouter`
+- Protected and public route definitions
+- Context provider wrapping (Auth, Notifications)
+- Redirect handling for unknown routes
+
+**Route structure:**
+```jsx
+const router = createBrowserRouter([
+  { path: "/login", element: <LoginPage /> },
+  {
+    element: <ProtectedRoute />,
+    children: [
+      {
+        path: "/",
+        element: <MainLayout />,
+        children: [
+          { index: true, element: <DashboardPage /> },
+          { path: "pedidos", element: <PedidosPage /> },
+          { path: "historial", element: <HistorialPage /> },
+          { path: "config", element: <ConfiguracionPage /> },
+        ],
+      },
+    ],
+  },
+]);
+```
+
+**Location:** `src/App.jsx`
+
+### `src/main.jsx`
+
+Application entry point that renders the root component.
+
+```jsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import App from './App.jsx'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+```
+
+**Location:** `src/main.jsx`
+
+### `index.html`
+
+HTML entry point that loads the React application.
+
+**Key elements:**
+- Meta tags for viewport and character encoding
+- Google Fonts imports (Inter font, Material Icons)
+- Root div mount point (`#root`)
+- Module script loading `src/main.jsx`
+
+**Location:** `index.html`
+
+## Configuration Files
+
+### `vite.config.js`
+
+Vite bundler configuration.
+
+```javascript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+})
+```
+
+**Plugins:**
+- `@vitejs/plugin-react` - Fast Refresh and JSX support
+- `@tailwindcss/vite` - Tailwind CSS integration
+
+### `vercel.json`
+
+Vercel deployment configuration for SPA routing.
+
+```json
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+```
+
+**Purpose:** Ensures all routes are handled by React Router, not Vercel's routing.
+
+## File Naming Conventions
+
+- **Components/Pages:** PascalCase with `.jsx` extension (`DashboardPage.jsx`)
+- **Services/Utils:** camelCase with `.js` extension (`pedidosService.js`)
+- **Hooks:** camelCase starting with `use` (`usePedidosRealtime.js`)
+- **Config files:** kebab-case (e.g., `vite.config.js`)
+
+## Import Patterns
+
+### Absolute imports are not configured
+
+All imports use relative paths:
+
+```jsx
+// From a page component
+import { useAuth } from '../context/AuthContext';
+import { getPedidos } from '../services/pedidosService';
+import Header from '../components/Header';
+```
+
+### Common import paths:
+
+```jsx
+// Pages
+import DashboardPage from './pages/DashboardPage';
+
+// Components  
+import Header from './components/Header';
+
+// Services
+import { getPedidos } from './services/pedidosService';
+
+// Supabase client
+import { supabase } from './lib/supabase';
+
+// Context
+import { useAuth } from './context/AuthContext';
+```
+
+## Build Output
+
+When you run `npm run build`, Vite creates an optimized production build:
+
+```
+dist/
+├── assets/
+│   ├── index-[hash].js      # Bundled JavaScript
+│   ├── index-[hash].css     # Compiled CSS
+│   └── [images]-[hash].ext  # Optimized images
+└── index.html               # Entry HTML with injected assets
+```
+
+The `dist/` directory is:
+- Git-ignored (`.gitignore`)
+- Served by Vercel in production
+- Can be previewed locally with `npm run preview`
+
+## Next Steps
+
+- Set up your [Local Development Environment](/development/local-setup)
+- Learn about [Deployment](/development/deployment)
+- Explore the [API Reference](/api/pedidos-service) for detailed service documentation

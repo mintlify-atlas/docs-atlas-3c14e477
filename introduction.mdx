@@ -1,0 +1,78 @@
+---
+title: Introduction
+description: Welcome to Lurwis CRM - A real-time restaurant order management system powered by WhatsApp webhooks and Supabase
+---
+
+## What is Lurwis CRM?
+
+Lurwis CRM is a modern, real-time customer relationship management system designed specifically for **Picanteria Lurwis**, a restaurant that receives orders through WhatsApp. The system automatically processes incoming orders, displays them in an intuitive Kanban board, and provides comprehensive analytics to help manage restaurant operations efficiently.
+
+<Note>
+This CRM integrates with WhatsApp through webhook automation (N8N/Make), Supabase for real-time data synchronization, and provides instant notifications when new orders arrive.
+</Note>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Real-time Order Management" icon="bell">
+    Orders from WhatsApp appear instantly in the dashboard via Supabase Realtime subscriptions
+  </Card>
+  <Card title="Kanban Workflow" icon="columns">
+    Visual order tracking through states: Pending → Kitchen → Ready → Completed
+  </Card>
+  <Card title="Analytics Dashboard" icon="chart-line">
+    Track revenue, peak hours, popular dishes, payment methods, and delivery vs pickup statistics
+  </Card>
+  <Card title="Webhook Integration" icon="webhook">
+    Bidirectional communication with N8N/Make workflows for WhatsApp notifications
+  </Card>
+</CardGroup>
+
+## Who is this for?
+
+Lurwis CRM is built for:
+
+- **Restaurant owners** who want to streamline WhatsApp order management
+- **Kitchen staff** who need a clear view of pending and in-progress orders
+- **Delivery coordinators** tracking orders ready for dispatch
+- **Business analysts** reviewing sales trends and customer behavior
+
+## What you can accomplish
+
+With Lurwis CRM, you can:
+
+✅ **Automate order intake** - Orders from WhatsApp webhooks automatically populate the system  
+✅ **Track order states** - Move orders through your workflow with a single click  
+✅ **Monitor performance** - View real-time KPIs like total revenue, average ticket, and success rate  
+✅ **Analyze trends** - Identify your best-selling dishes and peak business hours  
+✅ **Send notifications** - Automatically notify customers via WhatsApp when orders are ready  
+✅ **Manage authentication** - Secure admin access with Supabase Auth
+
+## Technology Stack
+
+Lurwis CRM is built with modern web technologies:
+
+- **Frontend**: React 19 + Vite for fast development and optimal performance
+- **Backend**: Supabase (PostgreSQL + Realtime + Auth)
+- **Styling**: Tailwind CSS 4 for responsive, utility-first design
+- **Routing**: React Router DOM for single-page application navigation
+- **Webhooks**: Integration with N8N/Make for WhatsApp automation
+
+<Warning>
+This system requires a configured Supabase project and optional webhook automation setup. Make sure you have access to these services before proceeding.
+</Warning>
+
+## System Requirements
+
+Before you begin, ensure you have:
+
+- Node.js 18.x or higher
+- npm, yarn, or pnpm package manager
+- A Supabase account with a project created
+- (Optional) N8N or Make.com account for WhatsApp webhook integration
+
+## Next Steps
+
+Ready to get started? Follow our [Quickstart Guide](/quickstart) to install dependencies, configure your environment, and launch the dashboard in minutes.
+
+For a deeper understanding of how data flows through the system, check out the [Architecture Overview](/architecture).

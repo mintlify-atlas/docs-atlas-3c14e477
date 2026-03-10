@@ -1,0 +1,194 @@
+---
+title: 'Local Development Setup'
+description: 'Complete guide to setting up Lurwis CRM locally for development'
+---
+
+This guide walks you through setting up the Lurwis CRM development environment on your local machine.
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- **Node.js** (v18 or higher)
+- **npm** (v9 or higher)
+- **Git**
+- A **Supabase** account and project
+
+## Setup Steps
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the Lurwis CRM repository to your local machine:
+
+    ```bash
+    git clone <repository-url>
+    cd crm-lurwis
+    ```
+  </Step>
+
+  <Step title="Install Dependencies">
+    Install all required npm packages:
+
+    ```bash
+    npm install
+    ```
+
+    This will install:
+    - React 19.2.0 and React Router for the UI
+    - Supabase client for database and authentication
+    - Vite for build tooling
+    - Tailwind CSS for styling
+    - Development tools (ESLint, TypeScript types)
+  </Step>
+
+  <Step title="Configure Environment Variables">
+    Create a `.env` file in the project root with your Supabase credentials:
+
+    ```bash
+    # .env
+    VITE_SUPABASE_URL=your-supabase-project-url
+    VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+    ```
+
+    <Warning>
+      Never commit your `.env` file to version control. It's already included in `.gitignore`.
+    </Warning>
+
+    ### Getting Supabase Credentials
+
+    1. Go to your [Supabase Dashboard](https://app.supabase.com)
+    2. Select your project
+    3. Navigate to **Settings** > **API**
+    4. Copy the **Project URL** and **anon/public key**
+
+    The application will validate these credentials at startup. If missing, you'll see an error in the console:
+
+    ```
+    [Supabase] Faltan las variables de entorno VITE_SUPABASE_URL y/o VITE_SUPABASE_ANON_KEY.
+    Copia .env.example → .env y rellena tus credenciales.
+    ```
+  </Step>
+
+  <Step title="Start Development Server">
+    Run the Vite development server:
+
+    ```bash
+    npm run dev
+    ```
+
+    The application will start at `http://localhost:5173` (default Vite port).
+
+    You should see output similar to:
+    ```
+    VITE v7.3.1  ready in 500 ms
+
+    ➜  Local:   http://localhost:5173/
+    ➜  Network: use --host to expose
+    ```
+  </Step>
+
+  <Step title="Verify Setup">
+    Open your browser and navigate to `http://localhost:5173`
+
+    - You should see the Lurwis CRM login page
+    - Try logging in with your Supabase credentials
+    - If successful, you'll be redirected to the dashboard
+  </Step>
+</Steps>
+
+## Available Scripts
+
+The project includes the following npm scripts:
+
+<CodeGroup>
+```bash Development Server
+npm run dev
+```
+
+```bash Production Build
+npm run build
+```
+
+```bash Preview Production Build
+npm run preview
+```
+
+```bash Lint Code
+npm run lint
+```
+</CodeGroup>
+
+### Script Details
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `dev` | `vite` | Starts the Vite development server with hot module replacement (HMR) |
+| `build` | `vite build` | Creates an optimized production build in the `dist/` directory |
+| `preview` | `vite preview` | Serves the production build locally for testing |
+| `lint` | `eslint .` | Runs ESLint to check code quality and style |
+
+## Troubleshooting
+
+<Accordion title="Port 5173 is already in use">
+  If port 5173 is occupied, Vite will automatically try the next available port (5174, 5175, etc.).
+
+  To specify a different port:
+  ```bash
+  npm run dev -- --port 3000
+  ```
+</Accordion>
+
+<Accordion title="Supabase connection errors">
+  **Symptoms:** Login fails, data doesn't load, console shows connection errors
+
+  **Solutions:**
+  1. Verify your `.env` file exists and contains valid credentials
+  2. Check that your Supabase project is active and not paused
+  3. Ensure your IP is not blocked in Supabase's network restrictions
+  4. Restart the dev server after changing `.env` values
+</Accordion>
+
+<Accordion title="Module not found errors">
+  **Solution:** Delete `node_modules` and reinstall:
+  ```bash
+  rm -rf node_modules package-lock.json
+  npm install
+  ```
+</Accordion>
+
+<Accordion title="ESLint errors blocking development">
+  The project uses ESLint with React-specific rules. Common issues:
+
+  - **Missing dependencies in useEffect**: Add them to the dependency array
+  - **Unused variables**: Remove them or prefix with underscore (`_unused`)
+  
+  Run `npm run lint` to see all issues:
+  ```bash
+  npm run lint
+  ```
+</Accordion>
+
+<Accordion title="Blank page after login">
+  **Possible causes:**
+  1. Database tables not set up correctly - check your Supabase schema
+  2. RLS (Row Level Security) policies blocking data access
+  3. Missing permissions for the authenticated user
+
+  Check the browser console for specific error messages.
+</Accordion>
+
+## Next Steps
+
+Once your development environment is running:
+
+- Explore the [Project Structure](/development/project-structure) to understand the codebase
+- Review the [Deployment Guide](/development/deployment) for production deployment
+- Check the [API Reference](/api/pedidos-service) for available services and hooks
+
+## Development Best Practices
+
+- Always pull the latest changes before starting work: `git pull origin main`
+- Create feature branches for new work: `git checkout -b feature/your-feature-name`
+- Test your changes thoroughly before committing
+- Run `npm run lint` before pushing code
+- Keep your `.env` file secure and never commit it

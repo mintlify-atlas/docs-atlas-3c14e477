@@ -1,0 +1,485 @@
+---
+title: 'Production Deployment'
+description: 'Deploy Lurwis CRM to production using Vercel'
+---
+
+This guide covers deploying Lurwis CRM to production using Vercel, the recommended hosting platform for Vite applications.
+
+## Prerequisites
+
+Before deploying, ensure you have:
+
+- A [Vercel account](https://vercel.com/signup)
+- Your repository pushed to GitHub, GitLab, or Bitbucket
+- Supabase project set up with production credentials
+- All environment variables ready
+
+## Deployment Methods
+
+<Accordion title="Option 1: Deploy via Vercel Dashboard (Recommended)">
+  This is the easiest method for first-time deployment.
+
+  <Steps>
+    <Step title="Connect Repository">
+      1. Log in to [Vercel Dashboard](https://vercel.com/dashboard)
+      2. Click **"Add New Project"**
+      3. Import your Git repository
+      4. Select the `crm-lurwis` repository
+    </Step>
+
+    <Step title="Configure Build Settings">
+      Vercel will auto-detect Vite settings. Verify:
+
+      | Setting | Value |
+      |---------|-------|
+      | **Framework Preset** | Vite |
+      | **Build Command** | `npm run build` |
+      | **Output Directory** | `dist` |
+      | **Install Command** | `npm install` |
+
+      These should be detected automatically. No changes needed unless you've customized the build process.
+    </Step>
+
+    <Step title="Add Environment Variables">
+      Under **Environment Variables**, add:
+
+      ```bash
+      VITE_SUPABASE_URL=https://your-project.supabase.co
+      VITE_SUPABASE_ANON_KEY=your-production-anon-key
+      ```
+
+      <Warning>
+        Use your **production** Supabase credentials, not development ones.
+      </Warning>
+
+      Tips:
+      - Click **"Add"** for each variable
+      - Set environment to **"Production"** (or all environments)
+      - Double-check for typos in variable names
+    </Step>
+
+    <Step title="Deploy">
+      Click **"Deploy"** and wait for the build to complete.
+
+      Vercel will:
+      1. Clone your repository
+      2. Install dependencies (`npm install`)
+      3. Run the build command (`npm run build`)
+      4. Deploy the `dist/` folder to their CDN
+
+      Build time: ~1-3 minutes for initial deployment.
+    </Step>
+
+    <Step title="Verify Deployment">
+      Once deployed, Vercel provides:
+      - **Production URL**: `https://your-project.vercel.app`
+      - **Deployment details** and logs
+      - **Automatic HTTPS** certificate
+
+      Visit the URL and verify:
+      - Login page loads correctly
+      - Can authenticate with Supabase
+      - Dashboard displays after login
+    </Step>
+  </Steps>
+</Accordion>
+
+<Accordion title="Option 2: Deploy via Vercel CLI">
+  For developers who prefer command-line deployment.
+
+  <Steps>
+    <Step title="Install Vercel CLI">
+      ```bash
+      npm install -g vercel
+      ```
+    </Step>
+
+    <Step title="Login to Vercel">
+      ```bash
+      vercel login
+      ```
+
+      Follow the authentication prompts in your browser.
+    </Step>
+
+    <Step title="Deploy">
+      From your project root:
+
+      ```bash
+      vercel
+      ```
+
+      The CLI will:
+      1. Detect project settings
+      2. Ask for confirmation
+      3. Build and deploy
+
+      For production deployment:
+      ```bash
+      vercel --prod
+      ```
+    </Step>
+
+    <Step title="Set Environment Variables">
+      Add environment variables via CLI:
+
+      ```bash
+      vercel env add VITE_SUPABASE_URL production
+      vercel env add VITE_SUPABASE_ANON_KEY production
+      ```
+
+      Then redeploy:
+      ```bash
+      vercel --prod
+      ```
+    </Step>
+  </Steps>
+</Accordion>
+
+## Vercel Configuration
+
+The project includes a `vercel.json` file that configures Vercel for Single Page Application (SPA) routing:
+
+```json
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+```
+
+### Why This Matters
+
+**Without this configuration:**
+- Direct navigation to `/pedidos` would return a 404
+- Only the root `/` route would work
+- Users couldn't bookmark or share deep links
+
+**With this configuration:**
+- All routes are handled by React Router
+- Direct navigation to any route works correctly
+- Refresh on any page maintains the current view
+
+<Warning>
+  Do not modify or remove `vercel.json` unless you understand SPA routing implications.
+</Warning>
+
+## Build Process
+
+### What Happens During Build
+
+When Vercel runs `npm run build`, Vite:
+
+1. **Bundles JavaScript** - All React components and dependencies into optimized chunks
+2. **Compiles Tailwind CSS** - Processes and minifies CSS, removing unused styles
+3. **Optimizes assets** - Compresses images and static files
+4. **Generates hashed filenames** - Enables long-term caching (e.g., `index-a3b2c1d4.js`)
+5. **Creates production HTML** - Injects bundled scripts and styles into `index.html`
+
+### Build Output Structure
+
+```
+dist/
+├── assets/
+│   ├── index-[hash].js       # Main JavaScript bundle (~200-300 KB gzipped)
+│   ├── index-[hash].css      # Compiled Tailwind CSS
+│   ├── vendor-[hash].js      # Third-party libraries (React, Router, Supabase)
+│   └── [image]-[hash].jpg    # Optimized images
+├── index.html                # Entry point with injected assets
+└── vite.svg                  # Favicon and other public assets
+```
+
+### Build Optimization
+
+Vite automatically:
+- **Tree-shakes** unused code
+- **Code-splits** by route (lazy loading)
+- **Minifies** JavaScript and CSS
+- **Compresses** with gzip/brotli
+
+Typical bundle sizes:
+- Initial JavaScript: ~150-200 KB (gzipped)
+- Initial CSS: ~10-20 KB (gzipped)
+- Total initial load: ~200-250 KB
+
+## Environment Variables
+
+### Required Variables
+
+| Variable | Description | Example |
+|----------|-------------|----------|
+| `VITE_SUPABASE_URL` | Supabase project URL | `https://abc123.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anonymous/public key | `eyJhbGciOiJIUzI1...` |
+
+### Setting Variables in Vercel
+
+**Via Dashboard:**
+1. Go to **Project Settings** > **Environment Variables**
+2. Add each variable with name and value
+3. Select environment: Production, Preview, or Development
+4. Click **Save**
+
+**Via CLI:**
+```bash
+vercel env add VITE_SUPABASE_URL
+# Enter value when prompted
+# Select environments: production, preview, development
+```
+
+### Environment Types
+
+- **Production** - Live deployment (`your-project.vercel.app`)
+- **Preview** - Pull request and branch deployments
+- **Development** - Local development with `vercel dev`
+
+<Warning>
+  Changes to environment variables require a new deployment to take effect. Redeploy after updating variables.
+</Warning>
+
+## Custom Domains
+
+### Adding a Custom Domain
+
+<Steps>
+  <Step title="Go to Project Settings">
+    Navigate to **Project Settings** > **Domains** in Vercel Dashboard
+  </Step>
+
+  <Step title="Add Domain">
+    Enter your domain name (e.g., `crm.lurwis.com`) and click **Add**
+  </Step>
+
+  <Step title="Configure DNS">
+    Vercel will provide DNS records to add:
+
+    **Option A: CNAME (subdomains)**
+    ```
+    Type: CNAME
+    Name: crm
+    Value: cname.vercel-dns.com
+    ```
+
+    **Option B: A Record (apex domains)**
+    ```
+    Type: A
+    Name: @
+    Value: 76.76.21.21
+    ```
+  </Step>
+
+  <Step title="Wait for Verification">
+    DNS propagation can take 24-48 hours, but usually completes within minutes.
+
+    Vercel will automatically:
+    - Verify domain ownership
+    - Provision SSL certificate
+    - Enable HTTPS
+  </Step>
+</Steps>
+
+## Continuous Deployment
+
+Vercel automatically deploys on git pushes:
+
+### Automatic Deployments
+
+- **Production deployments** - Triggered by pushes to `main` branch
+- **Preview deployments** - Created for all other branches and pull requests
+
+### Deployment URLs
+
+- **Production**: `https://your-project.vercel.app`
+- **Branch previews**: `https://your-project-git-branch-name.vercel.app`
+- **PR previews**: Unique URL for each pull request
+
+### Deployment Flow
+
+```mermaid
+graph LR
+    A[Push to GitHub] --> B[Vercel detects change]
+    B --> C[Run npm install]
+    C --> D[Run npm run build]
+    D --> E[Deploy to CDN]
+    E --> F[Live in seconds]
+```
+
+## Monitoring and Logs
+
+### Viewing Deployment Logs
+
+1. Go to **Deployments** in Vercel Dashboard
+2. Click on a deployment
+3. View **Build Logs** and **Function Logs**
+
+### Common Log Patterns
+
+**Successful build:**
+```
+✓ building client + server bundles
+✓ 123 modules transformed
+✓ built in 2.34s
+```
+
+**Build error:**
+```
+✗ Build failed
+Error: Module not found: Can't resolve './missing-file'
+```
+
+### Analytics and Performance
+
+Vercel provides:
+- **Analytics** - Page views, unique visitors, top pages
+- **Web Vitals** - Core Web Vitals monitoring (LCP, FID, CLS)
+- **Edge Network** - Global CDN performance metrics
+
+Access via **Analytics** tab in project dashboard.
+
+## Rollback and Version Control
+
+### Rolling Back a Deployment
+
+If a deployment introduces issues:
+
+1. Go to **Deployments**
+2. Find the previous working deployment
+3. Click **⋯** menu > **Promote to Production**
+
+Instant rollback - no rebuild required.
+
+### Deployment History
+
+Vercel keeps:
+- All deployment artifacts indefinitely
+- Full build logs for every deployment
+- Git commit metadata and author info
+
+## Troubleshooting
+
+<Accordion title="Build fails with 'Module not found'">
+  **Cause:** Missing dependency or incorrect import path
+
+  **Solutions:**
+  1. Verify the file exists in your repository
+  2. Check import paths are correct (case-sensitive on Vercel)
+  3. Ensure all dependencies are in `package.json`
+  4. Run `npm install` locally to verify
+</Accordion>
+
+<Accordion title="Environment variables not working">
+  **Symptoms:** Supabase connection fails, blank screens, console errors
+
+  **Solutions:**
+  1. Verify variable names start with `VITE_` prefix
+  2. Check variables are set for "Production" environment
+  3. Redeploy after adding/changing variables
+  4. Check for typos in variable names
+
+  **Note:** Vite only exposes variables prefixed with `VITE_` to the browser.
+</Accordion>
+
+<Accordion title="404 on routes after refresh">
+  **Cause:** Missing or incorrect `vercel.json` configuration
+
+  **Solution:** Ensure `vercel.json` exists with SPA rewrite rules:
+  ```json
+  {
+    "rewrites": [
+      { "source": "/(.*)", "destination": "/index.html" }
+    ]
+  }
+  ```
+</Accordion>
+
+<Accordion title="Slow initial load time">
+  **Possible causes:**
+  1. Large bundle size - Check with `npm run build` and review bundle analyzer
+  2. Unoptimized images - Compress images before committing
+  3. Missing code splitting - Implement lazy loading for routes
+
+  **Optimization tips:**
+  - Use dynamic imports: `const Page = lazy(() => import('./Page'))`
+  - Enable Vercel's Image Optimization
+  - Review and remove unused dependencies
+</Accordion>
+
+<Accordion title="Supabase RLS blocking requests in production">
+  **Symptoms:** Data loads locally but not in production
+
+  **Solution:**
+  1. Check Supabase RLS policies allow access for authenticated users
+  2. Verify production Supabase project has correct policies
+  3. Test with Supabase SQL editor to verify policies
+  4. Check browser console for specific error messages
+</Accordion>
+
+## Security Best Practices
+
+### Environment Variables
+- Never commit `.env` files to git
+- Use different credentials for development and production
+- Rotate Supabase keys if accidentally exposed
+- Use Vercel's encrypted environment variable storage
+
+### HTTPS and Security Headers
+
+Vercel automatically provides:
+- Free SSL certificates (Let's Encrypt)
+- Automatic HTTPS redirect
+- Security headers (HSTS, X-Frame-Options)
+
+No additional configuration needed.
+
+### API Security
+
+Since Lurwis CRM uses Supabase:
+- **Row Level Security (RLS)** policies protect data access
+- **JWT tokens** for authentication
+- **HTTPS-only** communication
+
+Always enable RLS on Supabase tables to prevent unauthorized access.
+
+## Performance Optimization
+
+### Caching Strategy
+
+Vercel automatically caches:
+- **Static assets** - 1 year cache (immutable files with hashed names)
+- **HTML** - No cache (ensures users get latest version)
+- **API responses** - Configurable via headers
+
+### CDN Distribution
+
+Your deployment is automatically distributed to Vercel's global Edge Network:
+- 75+ edge locations worldwide
+- Automatic routing to nearest location
+- Sub-100ms response times globally
+
+### Build Performance
+
+Typical build times:
+- **Fresh build**: 1-3 minutes
+- **Incremental build**: 30-60 seconds (with cache)
+
+Vercel caches:
+- `node_modules` between deployments
+- Build artifacts for faster rebuilds
+
+## Next Steps
+
+After deploying to production:
+
+- Set up [Custom Domain](#custom-domains) for branding
+- Configure **Vercel Analytics** for usage insights
+- Set up **Git Integration** for automatic deployments
+- Review [Security Best Practices](#security-best-practices)
+- Monitor **Build Logs** for any issues
+
+## Additional Resources
+
+- [Vercel Documentation](https://vercel.com/docs)
+- [Vite Deployment Guide](https://vitejs.dev/guide/static-deploy.html)
+- [Supabase Production Checklist](https://supabase.com/docs/guides/platform/going-into-prod)

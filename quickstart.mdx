@@ -1,80 +1,281 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get Lurwis CRM up and running in minutes with this step-by-step setup guide
 ---
 
-## Get started in three steps
+## Get Started with Lurwis CRM
 
-Get your documentation site running locally and make your first customization.
+This guide will walk you through installing dependencies, configuring Supabase, setting environment variables, and launching the development server.
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Clone the repository">
+    Clone the Lurwis CRM repository to your local machine:
+
+    ```bash
+    git clone <repository-url>
+    cd crm-lurwis
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install the required Node.js packages using your preferred package manager:
+
+    <CodeGroup>
+    ```bash npm
+    npm install
+    ```
+
+    ```bash yarn
+    yarn install
+    ```
+
+    ```bash pnpm
+    pnpm install
+    ```
+    </CodeGroup>
+
+    This will install all dependencies including:
+    - React 19 and React DOM
+    - Supabase JS client
+    - React Router DOM
+    - Tailwind CSS 4
+    - Vite build tool
+  </Step>
+
+  <Step title="Create a Supabase project">
+    If you haven't already, create a new Supabase project:
+
+    1. Go to [supabase.com](https://supabase.com) and sign in
+    2. Click **"New Project"**
+    3. Enter your project name, database password, and region
+    4. Wait for the project to initialize (1-2 minutes)
+
+    <Note>
+    Keep your Supabase dashboard open - you'll need to copy credentials in the next step.
+    </Note>
+  </Step>
+
+  <Step title="Set up the database schema">
+    In your Supabase dashboard, navigate to **SQL Editor** and create the required tables:
+
+    ```sql
+    -- Create pedidos_picanteria table
+    CREATE TABLE pedidos_picanteria (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      telefono TEXT,
+      cliente_nombre TEXT,
+      detalle_pedido JSONB,
+      total_final NUMERIC,
+      total_estimado NUMERIC,
+      metodo_pago TEXT,
+      tipo_servicio TEXT,
+      direccion TEXT,
+      estado_pedido TEXT DEFAULT 'pendiente',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Create platos table (optional, for dish name normalization)
+    CREATE TABLE platos (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      nombre TEXT NOT NULL,
+      activo BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Enable Realtime for pedidos_picanteria
+    ALTER PUBLICATION supabase_realtime ADD TABLE pedidos_picanteria;
+    ```
+
+    <Warning>
+    Make sure to enable Realtime for the `pedidos_picanteria` table. This is critical for instant order updates.
+    </Warning>
+  </Step>
+
+  <Step title="Configure environment variables">
+    Create a `.env` file in the root directory with your Supabase credentials:
+
+    ```bash .env
+    # Supabase Configuration (Required)
+    VITE_SUPABASE_URL=https://your-project.supabase.co
+    VITE_SUPABASE_ANON_KEY=your-anon-key-here
+
+    # Webhook Configuration (Optional - for N8N/Make integration)
+    VITE_WEBHOOK_BASE_URL=https://your-webhook-server.com
+    VITE_WEBHOOK_SECRET=your-webhook-secret
+    ```
+
+    **Where to find these values:**
+
+    1. In your Supabase dashboard, go to **Settings** → **API**
+    2. Copy the **Project URL** → paste as `VITE_SUPABASE_URL`
+    3. Copy the **anon public** key → paste as `VITE_SUPABASE_ANON_KEY`
+
+    <Note>
+    The webhook variables are optional. If not configured, the system will work without sending WhatsApp notifications.
+    </Note>
+
+    The Supabase client is initialized in `src/lib/supabase.js`:
+
+    ```javascript src/lib/supabase.js
+    import { createClient } from "@supabase/supabase-js";
+
+    const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL;
+    const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    if (!SUPABASE_URL || !SUPABASE_ANON) {
+      console.error(
+        "[Supabase] Missing VITE_SUPABASE_URL and/or VITE_SUPABASE_ANON_KEY.\n" +
+        "Copy .env.example → .env and fill in your credentials."
+      );
+    }
+
+    export const supabase = createClient(SUPABASE_URL ?? "", SUPABASE_ANON ?? "");
+    ```
+  </Step>
+
+  <Step title="Create an admin user">
+    To access the dashboard, you need to create an admin user in Supabase Auth:
+
+    **Option 1: Using Supabase Dashboard**
+    1. Go to **Authentication** → **Users**
+    2. Click **"Invite User"**
+    3. Enter an email address and temporary password
+    4. The user will be created immediately
+
+    **Option 2: Using SQL**
+    ```sql
+    -- Run this in SQL Editor (not recommended for production)
+    -- This is handled by Supabase Auth API
+    ```
+
+    <Note>
+    Make sure **Email** provider is enabled in **Authentication** → **Settings** → **Auth Providers**.
+    </Note>
+  </Step>
+
+  <Step title="Start the development server">
+    Launch the Vite development server:
+
+    <CodeGroup>
+    ```bash npm
+    npm run dev
+    ```
+
+    ```bash yarn
+    yarn dev
+    ```
+
+    ```bash pnpm
+    pnpm dev
+    ```
+    </CodeGroup>
+
+    You should see output like:
+
+    ```bash
+    VITE v7.3.1  ready in 320 ms
+
+    ➜  Local:   http://localhost:5173/
+    ➜  Network: use --host to expose
+    ```
+  </Step>
+
+  <Step title="Access the dashboard">
+    Open your browser and navigate to:
+
+    ```
+    http://localhost:5173
+    ```
+
+    You'll be redirected to the login page. Enter the admin credentials you created in Step 6.
+
+    The authentication flow is handled by `src/context/AuthContext.jsx`:
+
+    ```javascript src/context/AuthContext.jsx
+    const login = async (email, password) => {
+      const supabaseUser = await signIn(email, password);
+      setUser(supabaseUser);
+      return supabaseUser;
+    };
+    ```
+
+    After successful login, you'll see the main dashboard with:
+    - **Total Revenue** and **Average Ticket** cards
+    - **Top 5 Best-Selling Dishes** chart
+    - **Peak Hours** distribution (9 AM - 6 PM)
+    - **Payment Methods** breakdown
+    - **Delivery vs Pickup** statistics
+    - **Recent Orders** table
+  </Step>
+
+  <Step title="Test real-time order creation (optional)">
+    To verify that real-time subscriptions work, insert a test order directly in Supabase:
+
+    1. Go to **Table Editor** → **pedidos_picanteria**
+    2. Click **"Insert row"**
+    3. Fill in sample data:
+       ```json
+       {
+         "telefono": "+51999999999",
+         "cliente_nombre": "Test Customer",
+         "detalle_pedido": [{"nombre": "Ceviche", "cantidad": 2}],
+         "total_final": 45.00,
+         "metodo_pago": "Yape",
+         "tipo_servicio": "delivery",
+         "direccion": "Av. Test 123",
+         "estado_pedido": "pendiente"
+       }
+       ```
+    4. The order should appear **instantly** in the dashboard without refreshing
+
+    This works because of the Realtime subscription in `src/hooks/usePedidosRealtime.js`:
+
+    ```javascript src/hooks/usePedidosRealtime.js
+    const channel = supabase
+      .channel("pedidos-picanteria-realtime")
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: "pedidos_picanteria" },
+        ({ new: nuevo }) => {
+          if (COLUMN_ORDER.includes(nuevo.estado_pedido)) {
+            setPedidos((prev) => [nuevo, ...prev]);
+            pushNuevoPedido(String(nuevo.id).slice(0, 8), nuevo.cliente_nombre, total);
+          }
+        }
+      )
+      .subscribe();
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+Now that your CRM is running:
+
+- Explore the **Dashboard** to see analytics and metrics
+- Visit **Pedidos** page to see the Kanban board with order states
+- Check **Historial** for completed and canceled orders
+- Go to **Configuración** to manage dishes and system settings
+
+To understand how orders flow from WhatsApp to your dashboard, read the [Architecture Overview](/architecture).
+
+## Troubleshooting
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+  <Accordion title="Environment variables not loading">
+    Make sure your `.env` file is in the root directory (same level as `package.json`) and all variables start with `VITE_` prefix. Restart the dev server after adding variables.
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+
+  <Accordion title="Supabase connection fails">
+    Verify your `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are correct. Check the browser console for error messages. Make sure there are no trailing spaces in the `.env` file.
   </Accordion>
-</AccordionGroup>
 
-### Step 2: Deploy your changes
+  <Accordion title="Login credentials don't work">
+    Ensure the user was created in **Authentication** → **Users** in your Supabase dashboard. Check that the Email provider is enabled in **Authentication** → **Settings**.
+  </Accordion>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
+  <Accordion title="Real-time updates not working">
+    Run this SQL command to enable Realtime:  
+    `ALTER PUBLICATION supabase_realtime ADD TABLE pedidos_picanteria;`  
+    Check the browser console for WebSocket connection errors.
   </Accordion>
 </AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

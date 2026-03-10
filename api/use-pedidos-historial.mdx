@@ -1,0 +1,298 @@
+---
+title: "usePedidosHistorial"
+description: "Historical order queries with date and payment method filtering"
+---
+
+## Overview
+
+The `usePedidosHistorial` hook provides filtered access to completed and canceled orders with client-side date filtering and payment method filters. It groups orders by their final state and calculates total revenue.
+
+## Location
+
+`src/hooks/usePedidosHistorial.js`
+
+## Usage
+
+```javascript
+import { usePedidosHistorial } from "../hooks/usePedidosHistorial";
+
+function HistorialPage() {
+  const [periodo, setPeriodo] = useState("Hoy");
+  const [pagosActivos, setPagosActivos] = useState(["Yape", "Efectivo"]);
+  
+  const { porEstado, totalIngresos, pedidos, loading, error, recargar } =
+    usePedidosHistorial(periodo, pagosActivos);
+
+  const togglePago = (metodo) =>
+    setPagosActivos(prev =>
+      prev.includes(metodo) ? prev.filter(p => p !== metodo) : [...prev, metodo]
+    );
+
+  const totalPedidos = pedidos.length;
+
+  return (
+    <div>
+      <h1>Historial - {totalPedidos} pedidos</h1>
+      <p>Ingresos: S/ {totalIngresos.toFixed(2)}</p>
+      
+      {/* Render columns */}
+      <div>
+        <h2>Completados Delivery ({porEstado.completado.length})</h2>
+        <h2>Recogidos ({porEstado.recogido.length})</h2>
+        <h2>Cancelados ({porEstado.cancelado.length})</h2>
+      </div>
+    </div>
+  );
+}
+```
+
+## Parameters
+
+<ParamField path="periodo" type="string" required>
+  Time period filter for orders
+  
+  **Valid values:**
+  - `"Hoy"` - Today only (00:00 to current time)
+  - `"Esta Semana"` - Current week (Monday to today)
+  - `"Este Mes"` - Current month (1st to today)
+  - `"Mes Pasado"` - Previous month (1st to last day)
+  - `"Todo"` - All historical orders (no date filter)
+</ParamField>
+
+<ParamField path="pagosActivos" type="array" required>
+  Array of payment methods to include
+  
+  ```typescript
+  Array<"Yape" | "Plin" | "Efectivo" | "Tarjeta">
+  ```
+  
+  - Empty array `[]` returns all payment methods
+  - Example: `["Yape", "Efectivo"]` returns only those methods
+</ParamField>
+
+## Return Value
+
+<ResponseField name="pedidos" type="array" required>
+  All orders matching the current filters (date + payment methods). Each order contains:
+  
+  ```typescript
+  {
+    id: string,                    // UUID
+    telefono: string,
+    cliente_nombre: string,
+    detalle_pedido: Array<{        // JSONB array
+      nombre: string,
+      cantidad: number,
+      precio: number
+    }>,
+    total_estimado: number,
+    total_final: number | null,
+    metodo_pago: "Yape" | "Plin" | "Efectivo" | "Tarjeta",
+    tipo_servicio: "delivery" | "recojo",
+    estado_pedido: "completado" | "cancelado",
+    direccion: string,
+    created_at: string             // ISO timestamp
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="porEstado" type="object" required>
+  Orders grouped by their final delivery state
+  
+  ```typescript
+  {
+    completado: Array<Order>,  // Completed delivery orders (tipo_servicio === "delivery")
+    recogido: Array<Order>,    // Completed pickup orders (tipo_servicio === "recojo")
+    cancelado: Array<Order>    // Canceled orders (any tipo_servicio)
+  }
+  ```
+  
+  **Grouping logic:**
+  - `estado_pedido === "completado"` + `tipo_servicio === "delivery"` → `completado`
+  - `estado_pedido === "completado"` + `tipo_servicio === "recojo"` → `recogido`
+  - `estado_pedido === "cancelado"` → `cancelado`
+  
+  Case-insensitive matching for `tipo_servicio`.
+</ResponseField>
+
+<ResponseField name="totalIngresos" type="number" required>
+  Total revenue from completed orders only (canceled orders excluded)
+  
+  Calculated as: `sum(total_final ?? total_estimado)` for all orders where `estado_pedido === "completado"`
+</ResponseField>
+
+<ResponseField name="loading" type="boolean" required>
+  `true` during data fetch, `false` once loaded
+</ResponseField>
+
+<ResponseField name="error" type="string | null" required>
+  Error message if data fetch failed, otherwise `null`
+</ResponseField>
+
+<ResponseField name="recargar" type="function" required>
+  Manually reloads historical orders from the database
+  
+  ```javascript
+  async () => void
+  ```
+</ResponseField>
+
+## Date Range Calculation
+
+The hook exports a utility function for calculating date ranges:
+
+```javascript
+import { getRangoFechas } from "../hooks/usePedidosHistorial";
+
+const rango = getRangoFechas("Esta Semana");
+// { desde: Date, hasta: Date } | null
+```
+
+### Date Range Logic
+
+- **"Hoy"**: 00:00 today → 00:00 tomorrow
+- **"Esta Semana"**: Monday 00:00 → 00:00 tomorrow  
+  (Sunday is treated as day 0, becomes previous Monday)
+- **"Este Mes"**: 1st of current month → 00:00 tomorrow
+- **"Mes Pasado"**: 1st of previous month → 1st of current month
+- **"Todo"**: `null` (no filter applied)
+
+All times use local timezone. Filtering is done client-side to avoid Supabase timezone conversion issues.
+
+## Data Flow
+
+### 1. Database Query
+
+```javascript
+getPedidosHistorial({ pagos: pagosActivos })
+```
+
+- Fetches ALL completed and canceled orders
+- Filters by payment method if `pagosActivos` is not empty
+- Ordered by `created_at DESC` (newest first)
+- **No date filtering at database level**
+
+### 2. Client-Side Date Filtering
+
+```javascript
+const rango = getRangoFechas(periodo);
+if (!rango) return todosLosPedidos;  // "Todo" - no filter
+
+return todosLosPedidos.filter(p => {
+  const f = new Date(p.created_at);
+  return f >= rango.desde && f < rango.hasta;
+});
+```
+
+Ensures correct local timezone handling.
+
+### 3. Grouping by State
+
+Grouped into three categories based on `estado_pedido` and `tipo_servicio`.
+
+## Dependencies
+
+- `getPedidosHistorial` - Service function from `src/services/pedidosService.js`
+
+## Side Effects
+
+None. This hook only reads and filters data.
+
+## Behavior Details
+
+### Payment Method Filtering
+
+The hook reconstructs `pagosActivos` into a comma-separated key to trigger reloads:
+
+```javascript
+const pagosKey = pagosActivos.join(",");
+// Used as useEffect dependency
+```
+
+**Example:**
+- `["Yape", "Efectivo"]` → `"Yape,Efectivo"`
+- Empty `[]` → `""` (fetches all payment methods)
+
+### Case-Insensitive tipo_servicio
+
+The hook handles any capitalization:
+
+```javascript
+const tipoEs = (p, tipo) => (p.tipo_servicio ?? "").toLowerCase() === tipo;
+```
+
+Matches `"DELIVERY"`, `"Delivery"`, `"delivery"` equally.
+
+## Common Patterns
+
+### Toggle Payment Filters
+
+```javascript
+const [pagosActivos, setPagosActivos] = useState(["Yape", "Efectivo"]);
+
+const togglePago = (metodo) =>
+  setPagosActivos(prev =>
+    prev.includes(metodo)
+      ? prev.filter(p => p !== metodo)
+      : [...prev, metodo]
+  );
+
+// Usage
+togglePago("Plin");  // Adds Plin to filter
+togglePago("Yape");  // Removes Yape from filter
+```
+
+### Period Selector
+
+```javascript
+const periodos = ["Hoy", "Esta Semana", "Este Mes", "Mes Pasado", "Todo"];
+const [periodo, setPeriodo] = useState("Hoy");
+
+<select value={periodo} onChange={e => setPeriodo(e.target.value)}>
+  {periodos.map(p => <option key={p}>{p}</option>)}
+</select>
+```
+
+### Revenue Breakdown
+
+```javascript
+const { porEstado, totalIngresos } = usePedidosHistorial(periodo, pagosActivos);
+
+const ingresosDelivery = porEstado.completado.reduce(
+  (sum, p) => sum + Number(p.total_final ?? p.total_estimado ?? 0),
+  0
+);
+
+const ingresosRecojo = porEstado.recogido.reduce(
+  (sum, p) => sum + Number(p.total_final ?? p.total_estimado ?? 0),
+  0
+);
+
+const perdidosCancelados = porEstado.cancelado.reduce(
+  (sum, p) => sum + Number(p.total_final ?? p.total_estimado ?? 0),
+  0
+);
+```
+
+## Performance Considerations
+
+### Why Load All Data?
+
+The hook fetches ALL historical orders without date filtering at the database level because:
+
+1. **Timezone Issues**: Supabase converts timestamps to UTC, causing incorrect filtering when using database-level date ranges
+2. **Client-Side Control**: JavaScript `Date` objects respect local timezone
+3. **Caching**: Once loaded, switching periods doesn't require new database queries
+
+### Optimization Opportunities
+
+For very large datasets (>10,000 orders), consider:
+- Server-side date filtering with explicit timezone handling
+- Pagination
+- Virtual scrolling for order lists
+
+## Related
+
+- [usePedidosRealtime](/api/use-pedidos-realtime) - Real-time active order tracking
+- [Pedidos Service](/api/pedidos-service) - Order management service with getPedidosHistorial function
+- [useDashboard](/api/use-dashboard) - Similar date filtering for dashboard stats

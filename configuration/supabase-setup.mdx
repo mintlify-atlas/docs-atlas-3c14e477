@@ -1,0 +1,190 @@
+---
+title: 'Supabase Setup'
+description: 'Configure your Supabase project for Lurwis CRM'
+---
+
+## Overview
+
+Lurwis CRM uses Supabase as its backend database and real-time engine. This guide will walk you through setting up your Supabase project with the correct database schema and real-time configuration.
+
+## Prerequisites
+
+- A Supabase account (free tier works perfectly)
+- Basic knowledge of SQL
+- Your Supabase project URL and anon key
+
+## Database Schema
+
+### Main Table: `pedidos_picanteria`
+
+The CRM relies on a single main table that stores all order information. Create this table in your Supabase SQL Editor:
+
+```sql
+CREATE TABLE pedidos_picanteria (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  telefono varchar NOT NULL,
+  cliente_nombre varchar NOT NULL,
+  detalle_pedido jsonb NOT NULL,
+  total_estimado numeric NOT NULL,
+  total_final numeric,
+  metodo_pago varchar NOT NULL CHECK (metodo_pago IN ('Yape', 'Plin', 'Efectivo', 'Tarjeta')),
+  tipo_servicio varchar NOT NULL CHECK (tipo_servicio IN ('delivery', 'recojo')),
+  estado_pedido varchar NOT NULL DEFAULT 'pendiente' CHECK (estado_pedido IN ('pendiente', 'cocina', 'entregar', 'completado', 'cancelado')),
+  direccion varchar DEFAULT 'Sin dirección',
+  created_at timestamptz DEFAULT now()
+);
+
+-- Create index for better query performance
+CREATE INDEX idx_pedidos_estado ON pedidos_picanteria(estado_pedido);
+CREATE INDEX idx_pedidos_created ON pedidos_picanteria(created_at DESC);
+```
+
+### Schema Fields Explained
+
+<ParamField path="id" type="uuid" required>
+  Primary key, auto-generated UUID for each order
+</ParamField>
+
+<ParamField path="telefono" type="varchar" required>
+  Customer's phone number (used for WhatsApp integration)
+</ParamField>
+
+<ParamField path="cliente_nombre" type="varchar" required>
+  Customer's name
+</ParamField>
+
+<ParamField path="detalle_pedido" type="jsonb" required>
+  Order items stored as JSON array. Each item has:
+  - `nombre` (string): Item name
+  - `cantidad` (number): Quantity
+  - `precio` (number): Unit price
+  
+  Example:
+  ```json
+  [
+    {"nombre": "Ceviche Mixto", "cantidad": 2, "precio": 25.00},
+    {"nombre": "Chicha Morada", "cantidad": 1, "precio": 5.00}
+  ]
+  ```
+</ParamField>
+
+<ParamField path="total_estimado" type="numeric" required>
+  Estimated total from the initial order (calculated from detalle_pedido)
+</ParamField>
+
+<ParamField path="total_final" type="numeric">
+  Final amount charged to customer (nullable until order is completed)
+</ParamField>
+
+<ParamField path="metodo_pago" type="varchar" required>
+  Payment method. Allowed values:
+  - `Yape`
+  - `Plin`
+  - `Efectivo`
+  - `Tarjeta`
+</ParamField>
+
+<ParamField path="tipo_servicio" type="varchar" required>
+  Service type. Allowed values:
+  - `delivery`: Delivery order
+  - `recojo`: Pickup order
+</ParamField>
+
+<ParamField path="estado_pedido" type="varchar" required>
+  Order status for Kanban workflow. See [Order Flow](#order-flow) below.
+</ParamField>
+
+<ParamField path="direccion" type="varchar">
+  Delivery address (defaults to "Sin dirección" for pickup orders)
+</ParamField>
+
+<ParamField path="created_at" type="timestamptz">
+  Timestamp when the order was created
+</ParamField>
+
+## Order Flow
+
+The CRM uses a Kanban-style workflow with the following states:
+
+<Steps>
+  <Step title="pendiente">
+    New orders waiting for acceptance by kitchen staff
+  </Step>
+  
+  <Step title="cocina">
+    Orders accepted and being prepared
+  </Step>
+  
+  <Step title="entregar">
+    Orders ready for delivery or pickup
+  </Step>
+  
+  <Step title="completado">
+    Successfully completed orders
+  </Step>
+</Steps>
+
+<Note>
+  Orders can be moved to `cancelado` state from any other state.
+</Note>
+
+## Enable Realtime
+
+For the Kanban board to update in real-time, you **must** enable Supabase Realtime on the table.
+
+<Steps>
+  <Step title="Open Supabase SQL Editor">
+    Navigate to your project's SQL Editor in the Supabase dashboard
+  </Step>
+  
+  <Step title="Run the Publication Command">
+    Execute the following SQL command:
+    
+    ```sql
+    ALTER PUBLICATION supabase_realtime ADD TABLE pedidos_picanteria;
+    ```
+  </Step>
+  
+  <Step title="Verify Realtime is Active">
+    Go to Database → Replication in your Supabase dashboard and confirm `pedidos_picanteria` appears in the publication list
+  </Step>
+</Steps>
+
+<Warning>
+  Without enabling Realtime, the CRM will not receive live updates when new orders arrive via WhatsApp.
+</Warning>
+
+## Row Level Security (Optional)
+
+For production environments, consider enabling RLS:
+
+```sql
+-- Enable RLS
+ALTER TABLE pedidos_picanteria ENABLE ROW LEVEL SECURITY;
+
+-- Allow authenticated users to read all orders
+CREATE POLICY "Allow authenticated read" ON pedidos_picanteria
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Allow authenticated users to update orders
+CREATE POLICY "Allow authenticated update" ON pedidos_picanteria
+  FOR UPDATE
+  TO authenticated
+  USING (true);
+
+-- Allow service role to insert (for webhook integration)
+CREATE POLICY "Allow service role insert" ON pedidos_picanteria
+  FOR INSERT
+  TO service_role
+  WITH CHECK (true);
+```
+
+## Next Steps
+
+Once your database is set up:
+
+1. Configure your [Environment Variables](/configuration/environment-variables)
+2. Set up [Authentication](/configuration/authentication)
+3. Configure [Webhooks](/configuration/webhooks) for WhatsApp integration

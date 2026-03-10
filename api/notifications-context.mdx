@@ -1,0 +1,276 @@
+---
+title: 'NotificationsContext'
+description: 'Manage in-app notifications for orders and events'
+icon: 'bell'
+---
+
+## Overview
+
+The `NotificationsContext` provides a notification system for displaying in-app alerts for orders and events. It supports different notification types with icons and colors, and includes helper functions for common notification scenarios.
+
+## Setup
+
+Wrap your application with the `NotificationsProvider`:
+
+```jsx
+import { NotificationsProvider } from './context/NotificationsContext';
+
+function App() {
+  return (
+    <NotificationsProvider>
+      <YourApp />
+    </NotificationsProvider>
+  );
+}
+```
+
+## Notification Types
+
+The system supports three notification types:
+
+```jsx
+import { NOTIF_TYPES } from './context/NotificationsContext';
+
+// Available types:
+NOTIF_TYPES.NUEVO_PEDIDO  // "nuevo_pedido" - Blue icon (shopping_bag)
+NOTIF_TYPES.CANCELADO     // "cancelado" - Red icon (cancel)
+NOTIF_TYPES.COMPLETADO    // "completado" - Green icon (check_circle)
+```
+
+Each type has an associated icon and color scheme:
+- **NUEVO_PEDIDO**: Blue (shopping_bag icon, blue-600 text, blue-50 background)
+- **CANCELADO**: Red (cancel icon, red-500 text, red-50 background)
+- **COMPLETADO**: Green (check_circle icon, green-600 text, green-50 background)
+
+## Context Values
+
+Access these values using the `useNotifications()` hook:
+
+<ResponseField name="notifications" type="array">
+  Array of notification objects. Each notification has:
+  - `id` (number) - Unique identifier
+  - `type` (string) - One of the NOTIF_TYPES values
+  - `title` (string) - Notification title
+  - `body` (string) - Notification body text
+  - `time` (string) - Timestamp (defaults to "Ahora")
+  - `read` (boolean) - Whether the notification has been read
+</ResponseField>
+
+<ResponseField name="unreadCount" type="number">
+  Count of unread notifications (where `read === false`)
+</ResponseField>
+
+<ResponseField name="push" type="function">
+  Adds a new notification to the list.
+  
+  **Parameters:**
+  - `type` (string) - Notification type from NOTIF_TYPES
+  - `title` (string) - Notification title
+  - `body` (string) - Notification body text
+</ResponseField>
+
+<ResponseField name="pushNuevoPedido" type="function">
+  Helper to add a new order notification.
+  
+  **Parameters:**
+  - `id` (number) - Order ID
+  - `cliente` (string) - Customer name
+  - `total` (number) - Order total amount
+  
+  Creates a notification with title "Nuevo pedido #{id}" and body "{cliente} · S/ {total}"
+</ResponseField>
+
+<ResponseField name="pushCancelado" type="function">
+  Helper to add a cancelled order notification.
+  
+  **Parameters:**
+  - `id` (number) - Order ID
+  - `cliente` (string) - Customer name
+  - `total` (number) - Order total amount
+  
+  Creates a notification with title "Pedido cancelado" and body "{cliente} · S/ {total}"
+</ResponseField>
+
+<ResponseField name="pushCompletado" type="function">
+  Helper to add a completed order notification.
+  
+  **Parameters:**
+  - `id` (number) - Order ID
+  - `cliente` (string) - Customer name
+  - `total` (number) - Order total amount
+  
+  Creates a notification with title "Pedido completado" and body "{cliente} · S/ {total}"
+</ResponseField>
+
+<ResponseField name="markRead" type="function">
+  Marks a specific notification as read.
+  
+  **Parameters:**
+  - `id` (number) - Notification ID to mark as read
+</ResponseField>
+
+<ResponseField name="markAllRead" type="function">
+  Marks all notifications as read.
+</ResponseField>
+
+<ResponseField name="remove" type="function">
+  Removes a notification from the list.
+  
+  **Parameters:**
+  - `id` (number) - Notification ID to remove
+</ResponseField>
+
+## Usage
+
+### Displaying Notifications
+
+```jsx
+import { useNotifications } from './context/NotificationsContext';
+import { notifIcon } from './context/NotificationsContext';
+
+function NotificationsList() {
+  const { notifications, unreadCount, markRead, remove } = useNotifications();
+
+  return (
+    <div>
+      <h2>Notifications ({unreadCount} unread)</h2>
+      {notifications.map((notif) => {
+        const { icon, color, bg } = notifIcon(notif.type);
+        
+        return (
+          <div key={notif.id} className={notif.read ? 'opacity-50' : ''}>
+            <div className={`${bg} ${color}`}>
+              <span className="material-icons">{icon}</span>
+            </div>
+            <div>
+              <h3>{notif.title}</h3>
+              <p>{notif.body}</p>
+              <span>{notif.time}</span>
+            </div>
+            <button onClick={() => markRead(notif.id)}>Mark Read</button>
+            <button onClick={() => remove(notif.id)}>Remove</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+```
+
+### Creating Notifications (Generic)
+
+```jsx
+import { useNotifications, NOTIF_TYPES } from './context/NotificationsContext';
+
+function OrderActions() {
+  const { push } = useNotifications();
+
+  const handleCustomNotification = () => {
+    push(
+      NOTIF_TYPES.NUEVO_PEDIDO,
+      'Custom Title',
+      'Custom notification body'
+    );
+  };
+
+  return <button onClick={handleCustomNotification}>Send Notification</button>;
+}
+```
+
+### Creating Order Notifications (Helpers)
+
+```jsx
+import { useNotifications } from './context/NotificationsContext';
+
+function OrderManager() {
+  const { pushNuevoPedido, pushCancelado, pushCompletado } = useNotifications();
+
+  const handleNewOrder = (order) => {
+    pushNuevoPedido(order.id, order.cliente, order.total);
+    // Creates: "Nuevo pedido #123" | "John Doe · S/ 250"
+  };
+
+  const handleCancelOrder = (order) => {
+    pushCancelado(order.id, order.cliente, order.total);
+    // Creates: "Pedido cancelado" | "John Doe · S/ 250"
+  };
+
+  const handleCompleteOrder = (order) => {
+    pushCompletado(order.id, order.cliente, order.total);
+    // Creates: "Pedido completado" | "John Doe · S/ 250"
+  };
+
+  return (
+    <div>
+      <button onClick={() => handleNewOrder({ id: 123, cliente: 'John Doe', total: 250 })}>
+        New Order
+      </button>
+      <button onClick={() => handleCancelOrder({ id: 123, cliente: 'John Doe', total: 250 })}>
+        Cancel Order
+      </button>
+      <button onClick={() => handleCompleteOrder({ id: 123, cliente: 'John Doe', total: 250 })}>
+        Complete Order
+      </button>
+    </div>
+  );
+}
+```
+
+### Unread Count Badge
+
+```jsx
+import { useNotifications } from './context/NotificationsContext';
+
+function NotificationBell() {
+  const { unreadCount } = useNotifications();
+
+  return (
+    <button>
+      <span className="material-icons">notifications</span>
+      {unreadCount > 0 && (
+        <span className="badge">{unreadCount}</span>
+      )}
+    </button>
+  );
+}
+```
+
+### Mark All as Read
+
+```jsx
+import { useNotifications } from './context/NotificationsContext';
+
+function NotificationsHeader() {
+  const { unreadCount, markAllRead } = useNotifications();
+
+  return (
+    <div>
+      <h2>Notifications</h2>
+      {unreadCount > 0 && (
+        <button onClick={markAllRead}>
+          Mark all as read
+        </button>
+      )}
+    </div>
+  );
+}
+```
+
+## Getting Notification Icons
+
+Use the `notifIcon` helper to get styling information for a notification type:
+
+```jsx
+import { notifIcon, NOTIF_TYPES } from './context/NotificationsContext';
+
+const { icon, color, bg } = notifIcon(NOTIF_TYPES.NUEVO_PEDIDO);
+// Returns: { icon: "shopping_bag", color: "text-blue-600", bg: "bg-blue-50" }
+```
+
+## Implementation Details
+
+- **Auto-incrementing IDs**: Each notification gets a unique ID using an internal counter
+- **Newest First**: New notifications are prepended to the array (appear at the top)
+- **Default Time**: All notifications have `time` set to "Ahora" (Now)
+- **Unread by Default**: New notifications are created with `read: false`
+- **Memoized Functions**: All context functions use `useCallback` for optimal performance

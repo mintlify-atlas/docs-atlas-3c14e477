@@ -1,0 +1,525 @@
+---
+title: Order History
+description: View completed and cancelled orders with advanced filtering
+icon: clock-rotate-left
+---
+
+## Overview
+
+The Order History page provides a retrospective view of all finalized orders (completed and cancelled) with powerful filtering by time period and payment method. Orders are displayed in a Kanban-style layout for easy visual scanning.
+
+## History Columns
+
+Unlike the live Kanban board, the History view groups completed orders by service type:
+
+<CardGroup cols={3}>
+  <Card title="Entregados" icon="motorcycle">
+    Completed **delivery** orders (`completado` + `delivery`)
+  </Card>
+  <Card title="Recogidos" icon="store">
+    Completed **pickup** orders (`completado` + `recojo`)
+  </Card>
+  <Card title="Cancelados" icon="ban">
+    Cancelled orders from any state
+  </Card>
+</CardGroup>
+
+### Column Configuration
+
+```javascript
+const COLUMN_DEFS = [
+  { 
+    id: "completado", 
+    label: "Entregados", 
+    dotColor: "bg-green-500", 
+    headerAccent: "border-t-2 border-t-green-500", 
+    acento: "border-l-green-500" 
+  },
+  { 
+    id: "recogido", 
+    label: "Recogidos", 
+    dotColor: "bg-teal-500", 
+    headerAccent: "border-t-2 border-t-teal-500", 
+    acento: "border-l-teal-500" 
+  },
+  { 
+    id: "cancelado", 
+    label: "Cancelados", 
+    dotColor: "bg-red-500", 
+    headerAccent: "border-t-2 border-t-red-500", 
+    acento: "border-l-red-500" 
+  },
+];
+```
+
+**Grouping logic:**
+
+```javascript
+const tipoEs = (p, tipo) => (p.tipo_servicio ?? "").toLowerCase() === tipo;
+
+const porEstado = {
+  completado: pedidos.filter((p) => 
+    p.estado_pedido === "completado" && tipoEs(p, "delivery")
+  ),
+  recogido: pedidos.filter((p) => 
+    p.estado_pedido === "completado" && tipoEs(p, "recojo")
+  ),
+  cancelado: pedidos.filter((p) => 
+    p.estado_pedido === "cancelado"
+  ),
+};
+```
+
+<Note>
+  Cancelled orders include **all service types** (both delivery and recojo) in a single column.
+</Note>
+
+## Time Period Filters
+
+Filter orders by creation date with preset time ranges:
+
+| Period | Date Range |
+|--------|------------|
+| **Todo** | All orders (no filter) |
+| **Hoy** | Today from 00:00 to 23:59 |
+| **Esta Semana** | Monday of current week through today |
+| **Este Mes** | First day of current month through today |
+| **Mes Pasado** | First to last day of previous month |
+
+**Implementation:**
+
+```javascript
+export const getRangoFechas = (periodo) => {
+  if (periodo === "Todo") return null; // No filter
+
+  const hoy = startOf(new Date());
+  const manana = new Date(hoy);
+  manana.setDate(hoy.getDate() + 1);
+
+  if (periodo === "Hoy") 
+    return { desde: hoy, hasta: manana };
+
+  if (periodo === "Esta Semana") {
+    const lunes = new Date(hoy);
+    lunes.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay() - 1));
+    return { desde: lunes, hasta: manana };
+  }
+
+  if (periodo === "Este Mes") 
+    return { desde: new Date(hoy.getFullYear(), hoy.getMonth(), 1), hasta: manana };
+
+  if (periodo === "Mes Pasado") 
+    return {
+      desde: new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1),
+      hasta: new Date(hoy.getFullYear(), hoy.getMonth(), 1),
+    };
+};
+```
+
+**Date filtering (client-side):**
+
+```javascript
+const pedidos = (() => {
+  const rango = getRangoFechas(periodo);
+  if (!rango) return todosLosPedidos; // "Todo" selected
+  
+  return todosLosPedidos.filter((p) => {
+    const f = new Date(p.created_at);
+    return f >= rango.desde && f < rango.hasta;
+  });
+})();
+```
+
+<Tip>
+  Client-side filtering prevents timezone issues that can occur when filtering dates in UTC on the server.
+</Tip>
+
+## Payment Method Filters
+
+Multi-select filter for payment methods:
+
+<CardGroup cols={4}>
+  <Card title="Yape" icon="mobile">
+    Purple badge with smartphone icon
+  </Card>
+  <Card title="Plin" icon="mobile">
+    Blue badge with smartphone icon
+  </Card>
+  <Card title="Efectivo" icon="money-bill">
+    Green badge with payments icon
+  </Card>
+  <Card title="Tarjeta" icon="credit-card">
+    Sky blue badge with card icon
+  </Card>
+</CardGroup>
+
+**Filter configuration:**
+
+```javascript
+const METODOS_PAGO = [
+  { 
+    key: "Yape", 
+    icon: "smartphone", 
+    color: "text-purple-600", 
+    activeBg: "bg-purple-100 border-purple-400 text-purple-700" 
+  },
+  { 
+    key: "Plin", 
+    icon: "smartphone", 
+    color: "text-blue-400", 
+    activeBg: "bg-blue-100 border-blue-400 text-blue-700" 
+  },
+  { 
+    key: "Efectivo", 
+    icon: "payments", 
+    color: "text-green-600", 
+    activeBg: "bg-green-100 border-green-400 text-green-700" 
+  },
+  { 
+    key: "Tarjeta", 
+    icon: "credit_card", 
+    color: "text-blue-600", 
+    activeBg: "bg-sky-100 border-sky-400 text-sky-700" 
+  },
+];
+```
+
+**Toggle logic:**
+
+```javascript
+const [pagosActivos, setPagosActivos] = useState([]);
+
+const togglePago = (key) =>
+  setPagosActivos((prev) =>
+    prev.includes(key) 
+      ? prev.filter((p) => p !== key) // Remove if active
+      : [...prev, key]                // Add if inactive
+  );
+```
+
+**Server query with payment filter:**
+
+```javascript
+export const getPedidosHistorial = async ({ pagos = [] } = {}) => {
+  let query = supabase
+    .from("pedidos_picanteria")
+    .select(CAMPOS)
+    .in("estado_pedido", ["completado", "cancelado"])
+    .order("created_at", { ascending: false });
+
+  if (pagos.length > 0) {
+    query = query.in("metodo_pago", pagos); // Filter by selected methods
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+};
+```
+
+<Note>
+  Payment filtering is applied **server-side** (Supabase query), while date filtering is **client-side** (JavaScript filter).
+</Note>
+
+## Filter Panel UI
+
+Toggleable filter panel with "Filtros" button:
+
+**Collapsed state:**
+- "Filtros" button with tune icon
+- Red badge showing active filter count (e.g., "2")
+- "Limpiar" button (only visible when filters active)
+
+**Expanded state:**
+- White panel with payment method chips
+- Active chips show checkmark and accent color
+- Click any chip to toggle selection
+
+```javascript
+const [mostrarFiltros, setMostrarFiltros] = useState(false);
+const hayFiltrosActivos = pagosActivos.length > 0;
+
+<button
+  onClick={() => setMostrarFiltros((v) => !v)}
+  className={`relative flex items-center gap-1 px-3 py-2 rounded-md ${
+    mostrarFiltros || hayFiltrosActivos
+      ? "bg-primary text-white border-primary"
+      : "bg-white text-gray-700 border-gray-200"
+  }`}
+>
+  <span className="material-icons-round">tune</span>
+  Filtros
+  {hayFiltrosActivos && (
+    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px]">
+      {pagosActivos.length}
+    </span>
+  )}
+</button>
+```
+
+## Quick Stats Cards
+
+Four summary cards above the Kanban columns:
+
+<CardGroup cols={2}>
+  <Card title="Total pedidos" icon="receipt">
+    Count of all orders in current filter/period
+  </Card>
+  <Card title="Ingresos netos" icon="dollar-sign">
+    Sum of `total_final` for completed orders only
+  </Card>
+  <Card title="Entregados" icon="check">
+    Combined count of Entregados + Recogidos columns
+  </Card>
+  <Card title="Cancelados" icon="ban">
+    Count of Cancelados column
+  </Card>
+</CardGroup>
+
+**Revenue calculation:**
+
+```javascript
+const totalIngresos = pedidos
+  .filter((p) => p.estado_pedido === "completado")
+  .reduce((acc, p) => acc + Number(p.total_final ?? p.total_estimado ?? 0), 0);
+```
+
+<Warning>
+  Revenue only counts **completed** orders. Cancelled orders are excluded from the total even if they had a `total_estimado`.
+</Warning>
+
+## Order Card Display
+
+Each order card shows:
+
+### Header
+- **Order ID**: First 8 characters (e.g., `#a3f4c2d1`)
+- **Created date**: `"10 mar, 14:30"` format
+
+### Body
+- **Customer name**: Bold text
+- **Item chips**: Color-coded by state
+  - Completed: Gray background (`bg-gray-100 text-gray-700`)
+  - Cancelled: Red background (`bg-red-50 text-red-500`)
+- **Total amount**: `S/ 45.00`
+- **Delivery address**: Blue badge with location icon (if applicable)
+
+### Footer
+- **Service type icon**: 🛵 (delivery) or 🏠 (recojo)
+- **Payment method badge**: Color-coded chip
+
+**Item chip component:**
+
+```javascript
+const DetalleItems = ({ detalle, cancelado = false }) => {
+  const items = desglosaDetalle(detalle);
+  if (items.length === 0)
+    return <span className="text-xs text-gray-400 italic">Sin detalle</span>;
+  
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {items.map(({ nombre, cantidad }, idx) => (
+        <span
+          key={idx}
+          className={`inline-flex items-center text-[11px] px-1.5 py-0.5 rounded ${
+            cancelado 
+              ? "bg-red-50 text-red-500" 
+              : "bg-gray-100 text-gray-700"
+          }`}
+        >
+          {cantidad > 1 ? `${cantidad}× ` : ""}{nombre}
+        </span>
+      ))}
+    </div>
+  );
+};
+```
+
+**Left border accent:**
+
+Each card has a 4px left border matching its column:
+
+```javascript
+<div className={`border-l-4 ${col.acento} ...`}>
+  // Green for Entregados
+  // Teal for Recogidos
+  // Red for Cancelados
+</div>
+```
+
+## Visual Styling
+
+### Cancelled Orders
+
+Cancelled order cards have reduced opacity and red accents:
+
+```javascript
+<div className={`... ${
+  card.estado_pedido === "cancelado" ? "opacity-70" : ""
+}`}>
+```
+
+**Item chips:** Red background (`bg-red-50 text-red-500`)
+
+**Address badge:** Red background (if delivery)
+
+### Empty States
+
+**Global empty state** (no orders match filters):
+
+```javascript
+{!loading && pedidos.length === 0 && (
+  <div className="flex flex-col items-center justify-center py-16">
+    <span className="material-icons-round text-5xl text-gray-300">search_off</span>
+    <p className="text-base font-medium text-gray-400">Sin resultados</p>
+    <p className="text-sm text-gray-400 mt-1">
+      Prueba cambiando el período o los filtros de pago
+    </p>
+  </div>
+)}
+```
+
+**Column empty state** (specific column has no orders):
+
+```javascript
+{col.cards.length === 0 && (
+  <div className="flex flex-col items-center justify-center py-10 text-gray-300">
+    <span className="material-icons-round text-3xl mb-1">inbox</span>
+    <p className="text-xs">Sin pedidos</p>
+  </div>
+)}
+```
+
+## Data Loading
+
+The `usePedidosHistorial` hook manages data fetching:
+
+```javascript
+export const usePedidosHistorial = (periodo, pagosActivos) => {
+  const [todosLosPedidos, setTodosLosPedidos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const pagosKey = pagosActivos.join(",");
+
+  const cargar = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Fetch with payment filter (server-side)
+      const data = await getPedidosHistorial({ 
+        pagos: pagosKey ? pagosKey.split(",") : [] 
+      });
+      
+      setTodosLosPedidos(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [pagosKey]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  // Filter by period (client-side)
+  const pedidos = /* ... date filtering ... */;
+
+  // Group by column
+  const porEstado = /* ... grouping logic ... */;
+
+  // Calculate revenue
+  const totalIngresos = /* ... sum of completed ... */;
+
+  return { pedidos, porEstado, totalIngresos, loading, error, recargar: cargar };
+};
+```
+
+**Re-fetch triggers:**
+- Payment filter changes (`pagosKey` dependency)
+- Manual refresh button click (`recargar()` function)
+
+<Tip>
+  The `pagosKey` string (`"Yape,Plin"`) is used as a dependency to avoid re-rendering loops from array reference changes.
+</Tip>
+
+## User Workflows
+
+### Viewing Daily Revenue
+
+1. Select **"Hoy"** from period dropdown
+2. Look at **"Ingresos netos"** stat card
+3. Scroll through **"Entregados"** and **"Recogidos"** columns
+4. Click **"Limpiar"** if payment filters are active
+
+### Finding Cancelled Orders
+
+1. Select desired time period (e.g., "Esta Semana")
+2. Scroll to **"Cancelados"** column (rightmost)
+3. Review red-accented cards with cancelled item chips
+4. Check cancellation reasons (if stored in notes field)
+
+### Filtering by Payment Method
+
+1. Click **"Filtros"** button (top right)
+2. Select desired payment methods (e.g., Yape + Plin)
+3. Red badge shows active filter count
+4. Orders update to show only selected methods
+5. Click **"Limpiar"** to reset filters
+
+### Reviewing Last Month's Performance
+
+1. Select **"Mes Pasado"** from period dropdown
+2. Check **"Total pedidos"** and **"Ingresos netos"** cards
+3. Compare **"Entregados"** (delivery) vs. **"Recogidos"** (pickup) counts
+4. Review **"Cancelados"** rate
+
+## Error Handling
+
+If data loading fails, an error banner appears:
+
+```javascript
+{error && (
+  <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 mb-4">
+    <span className="material-icons-round">error_outline</span>
+    Error al cargar historial: {error}
+    <button onClick={recargar} className="ml-auto underline">
+      Reintentar
+    </button>
+  </div>
+)}
+```
+
+**Common errors:**
+- Network timeout
+- Supabase connection failure
+- Invalid date range
+- Missing table permissions
+
+## Performance Considerations
+
+<CardGroup cols={2}>
+  <Card title="Server-side Payment Filter" icon="server">
+    Reduces payload size by filtering in database query
+  </Card>
+  <Card title="Client-side Date Filter" icon="calendar">
+    Avoids timezone conversion issues
+  </Card>
+  <Card title="Descending Order" icon="arrow-down-wide-short">
+    Shows recent orders first (`order: created_at desc`)
+  </Card>
+  <Card title="Kanban Scroll" icon="arrows-left-right">
+    Horizontal overflow for many columns
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Dashboard Analytics" icon="chart-line" href="/features/dashboard-analytics">
+    View aggregated metrics and trends
+  </Card>
+  <Card title="Real-time Orders" icon="bell" href="/features/realtime-orders">
+    Monitor incoming orders in real-time
+  </Card>
+</CardGroup>

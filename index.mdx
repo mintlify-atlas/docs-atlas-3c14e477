@@ -1,97 +1,121 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Lurwis CRM"
+description: "Real-time dashboard for managing restaurant orders from WhatsApp with Kanban workflow and live analytics"
 ---
 
-## Setting up
+<div style={{
+  background: 'linear-gradient(135deg, #fbc926 0%, #8c73fa 100%)',
+  padding: '4rem 2rem',
+  borderRadius: '8px',
+  marginBottom: '2rem',
+  color: '#000000'
+}}>
+  <h1 style={{fontSize: '2.5rem', fontWeight: 700, marginBottom: '1rem', color: '#000000'}}>
+    Lurwis CRM
+  </h1>
+  <p style={{fontSize: '1.25rem', marginBottom: '2rem', color: '#000000', opacity: 0.9}}>
+    Real-time dashboard for managing restaurant orders from WhatsApp with Kanban workflow and live analytics
+  </p>
+  <div style={{display: 'flex', gap: '1rem', flexWrap: 'wrap'}}>
+    <a href="/quickstart" style={{
+      background: '#1a5aff',
+      color: '#ffffff',
+      padding: '0.75rem 1.5rem',
+      borderRadius: '6px',
+      textDecoration: 'none',
+      fontWeight: 600,
+      display: 'inline-block'
+    }}>
+      Get Started
+    </a>
+    <a href="https://github.com/KevinhosUTP/crm-lurwis" style={{
+      background: 'transparent',
+      color: '#000000',
+      padding: '0.75rem 1.5rem',
+      borderRadius: '4px',
+      textDecoration: 'none',
+      fontWeight: 600,
+      border: '2px solid #000000',
+      display: 'inline-block'
+    }}>
+      View on GitHub
+    </a>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+## Key Features
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Real-time Order Management" icon="bell" href="/features/realtime-orders">
+    Receive and manage orders from WhatsApp instantly with Supabase Realtime synchronization
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Kanban Workflow" icon="list-check" href="/features/kanban-workflow">
+    Visual order management through pending → kitchen → delivery → completed workflow
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Live Analytics Dashboard" icon="chart-line" href="/features/dashboard-analytics">
+    Track sales, peak hours, top dishes, and payment methods in real-time
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="WhatsApp Integration" icon="message" href="/configuration/webhooks">
+    Seamless integration with N8N, Make, or Zapier for automated order processing
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Get Started
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Set up your Lurwis CRM dashboard in minutes
+  </Card>
+  <Card title="Architecture Overview" icon="sitemap" href="/architecture">
+    Understand how the system works
+  </Card>
+  <Card title="Supabase Setup" icon="database" href="/configuration/supabase-setup">
+    Configure your Supabase backend
+  </Card>
+  <Card title="Local Development" icon="code" href="/development/local-setup">
+    Run the project locally
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Core Capabilities
 
-## Need inspiration?
+<Accordion title="Real-time Order Synchronization">
+  Built on Supabase Realtime, Lurwis CRM provides instant updates when new orders arrive. The dashboard automatically refreshes with new orders, status changes, and cancellations without manual intervention.
+</Accordion>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Accordion title="Kanban Board Management">
+  Visualize and manage your order workflow with a drag-and-drop Kanban board. Move orders through states: **pendiente** (pending) → **cocina** (kitchen) → **entregar** (delivery) → **completado** (completed).
+</Accordion>
+
+<Accordion title="Analytics & Reporting">
+  Track business metrics including total revenue, average ticket value, success rate, top dishes, payment method distribution, delivery vs pickup ratio, and peak hours visualization.
+</Accordion>
+
+<Accordion title="Order History">
+  Search and filter completed and cancelled orders by date range and payment method. Export data for accounting and business analysis.
+</Accordion>
+
+## Technology Stack
+
+Lurwis CRM is built with modern web technologies:
+
+- **Frontend**: React 19 with Vite
+- **Styling**: Tailwind CSS
+- **Backend**: Supabase (PostgreSQL + Realtime)
+- **Authentication**: Supabase Auth
+- **Routing**: React Router v7
+- **Integration**: Webhooks (N8N/Make/Zapier)
+
+## Quick Links
+
+<CardGroup cols={3}>
+  <Card title="API Reference" icon="code" href="/api/pedidos-service">
+    Explore the service APIs
+  </Card>
+  <Card title="Hooks Documentation" icon="plug" href="/api/use-pedidos-realtime">
+    React hooks for state management
+  </Card>
+  <Card title="Deployment Guide" icon="rocket" href="/development/deployment">
+    Deploy to production
+  </Card>
+</CardGroup>

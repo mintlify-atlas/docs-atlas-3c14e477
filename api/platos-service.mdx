@@ -1,0 +1,581 @@
+---
+title: 'Platos Service'
+description: 'Dish and price management service for the Picanteria CRM'
+---
+
+## Overview
+
+The `platosService` provides functions to manage dishes, prices, and categories in the Picanteria CRM. It handles CRUD operations across three related tables: `categorias`, `platos`, and `plato_precios`.
+
+### Database Schema
+
+The service interacts with the following tables:
+
+**categorias**
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | int (PK) | Category ID |
+| `nombre` | varchar | Category name |
+| `activo` | bool | Active status |
+
+**platos**
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | int (PK) | Dish ID |
+| `categoria_id` | int (FK) | References `categorias.id` |
+| `nombre` | varchar | Dish name |
+| `descripcion` | text | Dish description |
+| `activo` | bool | Active status |
+
+**plato_precios**
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | int (PK) | Price ID |
+| `plato_id` | int (FK) | References `platos.id` |
+| `tamanio` | varchar | Size: 'Personal', 'Único', or 'Familiar' |
+| `precio` | numeric | Price amount |
+| `activo` | bool | Active status |
+
+---
+
+## Functions
+
+### getCategorias
+
+Retrieves all active categories.
+
+```javascript
+import { getCategorias } from '../services/platosService';
+
+const categorias = await getCategorias();
+```
+
+#### Returns
+
+<ResponseField name="data" type="array">
+  Array of active category objects
+  
+  <Expandable title="Category Object">
+    <ResponseField name="id" type="number">
+      Category ID
+    </ResponseField>
+    
+    <ResponseField name="nombre" type="string">
+      Category name
+    </ResponseField>
+    
+    <ResponseField name="activo" type="boolean">
+      Active status (always `true` in returned results)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Behavior
+
+- Only returns categories where `activo = true`
+- Results ordered by `id` ascending
+- Returns empty array if no active categories exist
+
+#### Error Handling
+
+Throws Supabase error if database query fails.
+
+---
+
+### getPlatosConPrecios
+
+Retrieves all dishes with their prices and category information via JOIN.
+
+```javascript
+import { getPlatosConPrecios } from '../services/platosService';
+
+const platos = await getPlatosConPrecios();
+```
+
+#### Returns
+
+<ResponseField name="data" type="array">
+  Array of dish objects with nested prices
+  
+  <Expandable title="Dish Object">
+    <ResponseField name="id" type="number">
+      Dish ID
+    </ResponseField>
+    
+    <ResponseField name="nombre" type="string">
+      Dish name
+    </ResponseField>
+    
+    <ResponseField name="descripcion" type="string">
+      Dish description
+    </ResponseField>
+    
+    <ResponseField name="activo" type="boolean">
+      Active status
+    </ResponseField>
+    
+    <ResponseField name="categoria_id" type="number">
+      Category ID (foreign key)
+    </ResponseField>
+    
+    <ResponseField name="categoria_nombre" type="string">
+      Category name (denormalized from JOIN)
+    </ResponseField>
+    
+    <ResponseField name="precios" type="array">
+      Array of price objects
+      
+      <Expandable title="Price Object">
+        <ResponseField name="id" type="number">
+          Price ID
+        </ResponseField>
+        
+        <ResponseField name="tamanio" type="string">
+          Size: 'Personal' | 'Único' | 'Familiar'
+        </ResponseField>
+        
+        <ResponseField name="precio" type="number">
+          Price amount
+        </ResponseField>
+        
+        <ResponseField name="activo" type="boolean">
+          Active status
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Behavior
+
+- Returns all dishes (active and inactive)
+- Performs JOIN with `categorias` and `plato_precios` tables
+- Results ordered by `categoria_id`, then by `nombre`
+- If category not found, `categoria_nombre` defaults to "Sin categoría"
+- If no prices exist for a dish, `precios` is an empty array
+
+#### Error Handling
+
+Throws Supabase error if database query fails.
+
+---
+
+### crearPlato
+
+Creates a new dish.
+
+```javascript
+import { crearPlato } from '../services/platosService';
+
+const plato = await crearPlato({
+  nombre: 'Ceviche Mixto',
+  descripcion: 'Pescado, pulpo, calamar y camarones',
+  categoria_id: 1
+});
+```
+
+<ParamField path="data" type="object" required>
+  Dish data
+  
+  <Expandable title="Properties">
+    <ParamField path="nombre" type="string" required>
+      Dish name
+    </ParamField>
+    
+    <ParamField path="descripcion" type="string" required>
+      Dish description
+    </ParamField>
+    
+    <ParamField path="categoria_id" type="number" required>
+      Category ID (must exist in `categorias` table)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Returns
+
+<ResponseField name="data" type="object">
+  Created dish object
+  
+  <Expandable title="Properties">
+    <ResponseField name="id" type="number">
+      Auto-generated dish ID
+    </ResponseField>
+    
+    <ResponseField name="nombre" type="string">
+      Dish name
+    </ResponseField>
+    
+    <ResponseField name="descripcion" type="string">
+      Dish description
+    </ResponseField>
+    
+    <ResponseField name="activo" type="boolean">
+      Always `true` for new dishes
+    </ResponseField>
+    
+    <ResponseField name="categoria_id" type="number">
+      Category ID
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Behavior
+
+- New dishes are automatically set to `activo = true`
+- Returns the created dish with its auto-generated ID
+
+#### Error Handling
+
+Throws Supabase error if:
+- `categoria_id` doesn't exist (foreign key constraint)
+- Required fields are missing
+- Database insert fails
+
+---
+
+### crearPreciosPlato
+
+Creates multiple prices for a dish.
+
+```javascript
+import { crearPreciosPlato } from '../services/platosService';
+
+const precios = await crearPreciosPlato(5, [
+  { tamanio: 'Personal', precio: 25 },
+  { tamanio: 'Familiar', precio: 45 }
+]);
+```
+
+<ParamField path="plato_id" type="number" required>
+  Dish ID to create prices for
+</ParamField>
+
+<ParamField path="precios" type="array" required>
+  Array of price objects
+  
+  <Expandable title="Price Object">
+    <ParamField path="tamanio" type="string" required>
+      Size: 'Personal', 'Único', or 'Familiar'
+    </ParamField>
+    
+    <ParamField path="precio" type="number" required>
+      Price amount
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Returns
+
+<ResponseField name="data" type="array">
+  Array of created price objects with auto-generated IDs and `activo = true`
+</ResponseField>
+
+#### Behavior
+
+- All prices automatically set to `activo = true`
+- Performs bulk insert for better performance
+- Returns all created price records
+
+#### Error Handling
+
+Throws Supabase error if:
+- `plato_id` doesn't exist (foreign key constraint)
+- Invalid `tamanio` value provided
+- Database insert fails
+
+---
+
+### updatePlato
+
+Updates a dish's name and/or description.
+
+```javascript
+import { updatePlato } from '../services/platosService';
+
+const plato = await updatePlato(5, {
+  nombre: 'Ceviche Especial',
+  descripcion: 'Nueva descripción'
+});
+```
+
+<ParamField path="id" type="number" required>
+  Dish ID to update
+</ParamField>
+
+<ParamField path="data" type="object" required>
+  Fields to update
+  
+  <Expandable title="Properties">
+    <ParamField path="nombre" type="string" required>
+      New dish name
+    </ParamField>
+    
+    <ParamField path="descripcion" type="string" required>
+      New dish description
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Returns
+
+<ResponseField name="data" type="object">
+  Updated dish object with all fields
+</ResponseField>
+
+#### Behavior
+
+- Only updates `nombre` and `descripcion` fields
+- Does not modify `activo` or `categoria_id`
+- Returns the complete updated record
+
+#### Error Handling
+
+Throws Supabase error if:
+- Dish ID not found
+- Database update fails
+
+---
+
+### updatePrecio
+
+Updates a specific price record.
+
+```javascript
+import { updatePrecio } from '../services/platosService';
+
+const precio = await updatePrecio(12, {
+  precio: 28,
+  tamanio: 'Personal'
+});
+```
+
+<ParamField path="precioId" type="number" required>
+  Price record ID to update
+</ParamField>
+
+<ParamField path="data" type="object" required>
+  Fields to update
+  
+  <Expandable title="Properties">
+    <ParamField path="precio" type="number" required>
+      New price amount
+    </ParamField>
+    
+    <ParamField path="tamanio" type="string" required>
+      Size: 'Personal', 'Único', or 'Familiar'
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Returns
+
+<ResponseField name="data" type="object">
+  Updated price object
+</ResponseField>
+
+#### Behavior
+
+- Updates both `precio` and `tamanio` fields
+- Does not modify `activo` status
+
+#### Error Handling
+
+Throws Supabase error if:
+- Price ID not found
+- Invalid `tamanio` value
+- Database update fails
+
+---
+
+### toggleDisponibilidadPlato
+
+Toggles the availability status of a dish.
+
+```javascript
+import { toggleDisponibilidadPlato } from '../services/platosService';
+
+// Disable a dish
+const platoInactivo = await toggleDisponibilidadPlato(5, false);
+
+// Enable a dish
+const platoActivo = await toggleDisponibilidadPlato(5, true);
+```
+
+<ParamField path="id" type="number" required>
+  Dish ID to toggle
+</ParamField>
+
+<ParamField path="activo" type="boolean" required>
+  New active status
+</ParamField>
+
+#### Returns
+
+<ResponseField name="data" type="object">
+  Updated dish object with `id` and `activo` fields
+</ResponseField>
+
+#### Behavior
+
+- Updates only the `activo` field
+- Returns minimal data (ID and new status)
+
+#### Error Handling
+
+Throws Supabase error if:
+- Dish ID not found
+- Database update fails
+
+---
+
+### deletePlato
+
+Deletes a dish and all its associated prices.
+
+```javascript
+import { deletePlato } from '../services/platosService';
+
+await deletePlato(5);
+```
+
+<ParamField path="id" type="number" required>
+  Dish ID to delete
+</ParamField>
+
+#### Returns
+
+No return value (void).
+
+#### Behavior
+
+- **First** deletes all associated prices from `plato_precios`
+- **Then** deletes the dish from `platos`
+- Sequential deletion ensures data integrity if foreign key constraints don't have `ON DELETE CASCADE`
+
+#### Error Handling
+
+Throws Supabase error if:
+- Dish ID not found
+- Database delete fails
+- Dish is referenced elsewhere (depends on schema constraints)
+
+<Warning>
+This operation is **irreversible**. Consider using `toggleDisponibilidadPlato` to soft-delete instead.
+</Warning>
+
+---
+
+## Usage Examples
+
+<CodeGroup>
+
+```javascript Load Menu
+import { getCategorias, getPlatosConPrecios } from '../services/platosService';
+
+const categorias = await getCategorias();
+const platos = await getPlatosConPrecios();
+
+// Group dishes by category
+const menuPorCategoria = categorias.map(cat => ({
+  categoria: cat.nombre,
+  platos: platos.filter(p => p.categoria_id === cat.id && p.activo)
+}));
+
+console.log(menuPorCategoria);
+```
+
+```javascript Create Dish with Prices
+import { crearPlato, crearPreciosPlato } from '../services/platosService';
+
+async function crearPlatoCompleto() {
+  // Step 1: Create the dish
+  const plato = await crearPlato({
+    nombre: 'Arroz con Mariscos',
+    descripcion: 'Arroz con pescado, pulpo, calamar y camarones',
+    categoria_id: 2 // Platos de Fondo
+  });
+
+  // Step 2: Add prices
+  const precios = await crearPreciosPlato(plato.id, [
+    { tamanio: 'Personal', precio: 28 },
+    { tamanio: 'Familiar', precio: 55 }
+  ]);
+
+  return { ...plato, precios };
+}
+
+const nuevoPlato = await crearPlatoCompleto();
+console.log('Dish created:', nuevoPlato);
+```
+
+```javascript Update Menu Item
+import { updatePlato, updatePrecio } from '../services/platosService';
+
+// Update dish details
+const platoActualizado = await updatePlato(5, {
+  nombre: 'Ceviche Premium',
+  descripcion: 'Ahora con langostinos'
+});
+
+// Update a specific price
+const precioActualizado = await updatePrecio(12, {
+  precio: 32,
+  tamanio: 'Personal'
+});
+```
+
+```javascript Manage Availability
+import { toggleDisponibilidadPlato, getPlatosConPrecios } from '../services/platosService';
+
+// Mark dish as unavailable (sold out)
+await toggleDisponibilidadPlato(5, false);
+
+// Later, mark as available again
+await toggleDisponibilidadPlato(5, true);
+
+// Get all unavailable dishes
+const platos = await getPlatosConPrecios();
+const agotados = platos.filter(p => !p.activo);
+console.log('Sold out:', agotados.map(p => p.nombre));
+```
+
+```javascript Display Prices
+import { getPlatosConPrecios } from '../services/platosService';
+
+const platos = await getPlatosConPrecios();
+
+platos.forEach(plato => {
+  console.log(`${plato.nombre} - ${plato.categoria_nombre}`);
+  console.log(`  ${plato.descripcion}`);
+  
+  // Show active prices only
+  const preciosActivos = plato.precios.filter(p => p.activo);
+  preciosActivos.forEach(p => {
+    console.log(`  ${p.tamanio}: S/ ${p.precio}`);
+  });
+});
+```
+
+```javascript Delete with Confirmation
+import { deletePlato } from '../services/platosService';
+
+async function eliminarPlato(platoId, confirmar = false) {
+  if (!confirmar) {
+    throw new Error('Deletion requires confirmation');
+  }
+  
+  try {
+    await deletePlato(platoId);
+    console.log(`Dish ${platoId} deleted successfully`);
+  } catch (error) {
+    console.error('Failed to delete dish:', error.message);
+    throw error;
+  }
+}
+
+// Usage
+await eliminarPlato(5, true);
+```
+
+</CodeGroup>

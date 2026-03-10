@@ -1,0 +1,256 @@
+---
+title: Real-time Order Management
+description: Live order synchronization powered by Supabase Realtime
+icon: bolt
+---
+
+## Overview
+
+Lurwis CRM uses **Supabase Realtime** to provide live order updates across all connected devices. When a new order arrives via WhatsApp or any other channel, it instantly appears on all active Kanban boards without manual refresh.
+
+<Note>
+  **Enable Realtime in Supabase**: Before using this feature, you must activate Realtime for the `pedidos_picanteria` table:
+  
+  ```sql
+  ALTER PUBLICATION supabase_realtime ADD TABLE pedidos_picanteria;
+  ```
+</Note>
+
+## How It Works
+
+The real-time system subscribes to PostgreSQL changes on the `pedidos_picanteria` table and updates the UI automatically.
+
+### Architecture
+
+<CardGroup cols={2}>
+  <Card title="Database Layer" icon="database">
+    Supabase PostgreSQL with Realtime publication enabled
+  </Card>
+  <Card title="Hook Layer" icon="code">
+    `usePedidosRealtime` hook manages subscriptions and state
+  </Card>
+  <Card title="Service Layer" icon="gear">
+    `pedidosService.js` handles CRUD operations
+  </Card>
+  <Card title="UI Layer" icon="window-restore">
+    Kanban board updates instantly on INSERT/UPDATE events
+  </Card>
+</CardGroup>
+
+## Real-time Events
+
+The system listens to two types of PostgreSQL changes:
+
+### INSERT Events
+
+When a new order is created (e.g., from WhatsApp), it's immediately added to the Kanban board:
+
+```javascript
+.on("postgres_changes",
+  { event: "INSERT", schema: "public", table: "pedidos_picanteria" },
+  ({ new: nuevo }) => {
+    if (COLUMN_ORDER.includes(nuevo.estado_pedido)) {
+      setPedidos((prev) => [nuevo, ...prev]);
+      // Push browser notification
+      pushNuevoPedido(String(nuevo.id).slice(0, 8), 
+                       nuevo.cliente_nombre, 
+                       nuevo.total_final);
+    }
+  }
+)
+```
+
+**What happens:**
+1. New order appears at the top of the "Nuevos" (Pending) column
+2. Browser notification shows order ID, customer name, and total
+3. Order count badge updates automatically
+
+### UPDATE Events
+
+When an order's state changes (e.g., moved from "Cocina" to "Por Entregar"):
+
+```javascript
+.on("postgres_changes",
+  { event: "UPDATE", schema: "public", table: "pedidos_picanteria" },
+  ({ new: actualizado }) => {
+    setPedidos((prev) => {
+      const existe = prev.find((p) => p.id === actualizado.id);
+      if (!existe) return prev;
+      return prev.map((p) => (p.id === actualizado.id ? actualizado : p));
+    });
+  }
+)
+```
+
+**What happens:**
+1. Order card moves to the new column
+2. All order details update (state, timestamps, etc.)
+3. Change is reflected on all connected devices simultaneously
+
+## Order Data Structure
+
+Each order from `pedidos_picanteria` includes:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | uuid | Unique order identifier |
+| `telefono` | varchar | Customer WhatsApp number |
+| `cliente_nombre` | varchar | Customer name |
+| `detalle_pedido` | jsonb | Array of items: `[{nombre, cantidad, precio}]` |
+| `total_estimado` | numeric | Initial order total |
+| `total_final` | numeric | Final confirmed total (nullable) |
+| `metodo_pago` | varchar | Payment method (Yape, Plin, Efectivo, Tarjeta) |
+| `tipo_servicio` | varchar | Service type (delivery, recojo) |
+| `estado_pedido` | varchar | Order state (pendiente, cocina, entregar, completado, cancelado) |
+| `direccion` | varchar | Delivery address (default: "Sin dirección") |
+| `created_at` | timestamptz | Order creation timestamp |
+
+<Tip>
+  The `detalle_pedido` field is a flexible JSONB array that can contain any number of items with varying structures. The `desglosaDetalle()` utility function normalizes this data for display.
+</Tip>
+
+## Loading Active Orders
+
+The initial data load fetches all active orders (non-archived states):
+
+```javascript
+export const getPedidosActivos = async () => {
+  const { data, error } = await supabase
+    .from("pedidos_picanteria")
+    .select(CAMPOS)
+    .in("estado_pedido", ["pendiente", "cocina", "entregar", "completado"])
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return data ?? [];
+};
+```
+
+**State filtering:**
+- Only orders in active workflow states are loaded
+- Completed orders are limited to the last 3 (via `MAX_COMPLETADOS`)
+- Cancelled orders are excluded from the Kanban view
+
+## Notifications
+
+The system provides contextual notifications for key events:
+
+<CardGroup cols={3}>
+  <Card title="New Order" icon="bell">
+    Triggered when a new order is inserted into the database
+  </Card>
+  <Card title="Order Completed" icon="check-circle">
+    Shown when an order reaches "completado" state
+  </Card>
+  <Card title="Order Cancelled" icon="circle-xmark">
+    Alerts when an order is cancelled by staff
+  </Card>
+</CardGroup>
+
+### Notification Example
+
+When a new order arrives:
+
+```javascript
+if (inicializado.current) {
+  const total = nuevo.total_final ?? nuevo.total_estimado ?? "?";
+  pushNuevoPedido(
+    String(nuevo.id).slice(0, 8),  // Short ID: "a3f4c2d1"
+    nuevo.cliente_nombre ?? "Cliente",
+    total
+  );
+}
+```
+
+<Note>
+  Notifications are suppressed during the initial load (`inicializado.current`) to prevent notification spam when the page first loads.
+</Note>
+
+## Performance Optimizations
+
+### Optimistic Updates
+
+When advancing an order state, the UI updates immediately without waiting for the Realtime event:
+
+```javascript
+const actualizado = await updateEstadoPedido(pedido.id, siguiente);
+// Update local state immediately (don't rely solely on Realtime)
+setPedidos((prev) =>
+  prev.map((p) => (p.id === actualizado.id ? actualizado : p))
+);
+```
+
+**Benefits:**
+- Instant UI feedback
+- No perceived lag when moving orders
+- Realtime events still sync state across devices
+
+### Selective Field Loading
+
+Only necessary fields are fetched to reduce payload size:
+
+```javascript
+const CAMPOS = "id, telefono, cliente_nombre, detalle_pedido, 
+                total_estimado, total_final, metodo_pago, 
+                tipo_servicio, estado_pedido, direccion, created_at";
+```
+
+### Channel Cleanup
+
+The Realtime subscription is properly cleaned up when the component unmounts:
+
+```javascript
+return () => supabase.removeChannel(channel);
+```
+
+## Integration with Webhooks
+
+When orders advance through states, webhooks are triggered for external integrations (N8N workflows):
+
+| State Change | Webhook |
+|--------------|----------|
+| pendiente → cocina | `webhookPedidoAceptado()` |
+| cocina → entregar | `webhookPedidoListo()` |
+| entregar → completado (delivery) | `webhookPedidoDespachado()` |
+| entregar → completado (recojo) | `webhookPedidoCompletado()` |
+| any → cancelado | `webhookPedidoCancelado()` |
+
+<Tip>
+  All webhooks are non-blocking (fire-and-forget) using `.catch(console.warn)` to ensure UI responsiveness.
+</Tip>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Orders not appearing in real-time">
+    **Check:**
+    1. Verify Realtime is enabled: `ALTER PUBLICATION supabase_realtime ADD TABLE pedidos_picanteria;`
+    2. Check browser console for WebSocket connection errors
+    3. Ensure the order's `estado_pedido` is in `COLUMN_ORDER` array
+    4. Verify Supabase project is not paused
+  </Accordion>
+  
+  <Accordion title="Duplicate orders appearing">
+    This can happen if both Realtime and optimistic updates fire. The hook uses `setPedidos` with a check to prevent duplicates:
+    
+    ```javascript
+    const existe = prev.find((p) => p.id === actualizado.id);
+    if (!existe) return prev;
+    ```
+  </Accordion>
+  
+  <Accordion title="Notifications not showing">
+    Notifications are only shown after initial load. Check that `inicializado.current` is `true` and browser notification permissions are granted.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Kanban Workflow" icon="columns" href="/features/kanban-workflow">
+    Learn how orders progress through the Kanban states
+  </Card>
+  <Card title="Webhook Configuration" icon="webhook" href="/configuration/webhooks">
+    Configure N8N workflows for order automation
+  </Card>
+</CardGroup>

@@ -1,0 +1,455 @@
+---
+title: Dashboard Analytics
+description: Real-time KPIs, revenue tracking, and order insights
+icon: chart-line
+---
+
+## Overview
+
+The Dashboard provides a comprehensive view of business performance with real-time metrics, charts, and trends. All statistics are calculated client-side from the `pedidos_picanteria` table with configurable time periods.
+
+## Time Period Selector
+
+All dashboard metrics can be filtered by time period:
+
+<CardGroup cols={3}>
+  <Card title="Hoy" icon="calendar-day">
+    Today from 00:00 to 23:59
+  </Card>
+  <Card title="Esta Semana" icon="calendar-week">
+    Monday through today (current week)
+  </Card>
+  <Card title="Este Mes" icon="calendar">
+    First day of month through today
+  </Card>
+</CardGroup>
+
+**Implementation:**
+
+```javascript
+export const getRangoDashboard = (periodo) => {
+  const hoy = startOf(new Date()); // Today at 00:00:00
+  const manana = new Date(hoy); 
+  manana.setDate(hoy.getDate() + 1);
+
+  if (periodo === "Hoy") 
+    return { desde: hoy, hasta: manana };
+  
+  if (periodo === "Esta Semana") {
+    const lunes = new Date(hoy);
+    lunes.setDate(hoy.getDate() - (hoy.getDay() === 0 ? 6 : hoy.getDay() - 1));
+    return { desde: lunes, hasta: manana };
+  }
+  
+  if (periodo === "Este Mes")
+    return { desde: new Date(hoy.getFullYear(), hoy.getMonth(), 1), hasta: manana };
+};
+```
+
+<Note>
+  All date filtering is done **client-side** to avoid timezone issues between the database (UTC) and user's local time.
+</Note>
+
+## Key Performance Indicators
+
+Four primary KPI cards are displayed at the top of the dashboard:
+
+### 1. Ingresos Totales (Total Revenue)
+
+**Metric:** Sum of all completed orders' `total_final` (or `total_estimado` if final is null)
+
+```javascript
+const totalIngresos = completados.reduce(
+  (acc, p) => acc + Number(p.total_final ?? p.total_estimado ?? 0), 0
+);
+```
+
+**Display:**
+- Icon: `payments` (money symbol)
+- Format: `S/ 450.00`
+- Subtitle: "X pedidos exitosos"
+
+<Tip>
+  Only **completed** orders count toward revenue. Pending, in-progress, and cancelled orders are excluded.
+</Tip>
+
+### 2. Ticket Promedio (Average Ticket)
+
+**Metric:** Average order value for completed orders
+
+```javascript
+const ticketPromedio = completados.length > 0 
+  ? totalIngresos / completados.length 
+  : 0;
+```
+
+**Display:**
+- Icon: `receipt_long` (receipt symbol)
+- Format: `S/ 45.00`
+- Subtitle: "sobre X pedidos"
+
+### 3. Pedidos Exitosos (Success Rate)
+
+**Metric:** Percentage of non-cancelled orders
+
+```javascript
+const noCancel = pedidos.filter((p) => p.estado_pedido !== "cancelado");
+const tasaExito = pedidos.length > 0
+  ? Math.round((noCancel.length / pedidos.length) * 100)
+  : 0;
+```
+
+**Display:**
+- Icon: `check_circle` (checkmark)
+- Format: `95%`
+- Subtitle: "X cancelados"
+
+<Note>
+  Success rate includes **all non-cancelled orders**, even those still in progress (pendiente, cocina, entregar).
+</Note>
+
+### 4. Total Pedidos (Total Orders)
+
+**Metric:** Count of all orders in the selected period
+
+```javascript
+const totalPedidos = pedidos.length;
+```
+
+**Display:**
+- Icon: `group` (people symbol)
+- Format: `47`
+- Subtitle: Period name ("hoy", "esta semana")
+
+## Charts and Visualizations
+
+### Top 5 Platos Más Vendidos (Best-Selling Dishes)
+
+Horizontal bar chart showing the most popular dishes by total units sold.
+
+**Calculation logic:**
+
+```javascript
+// 1. Extract all items from non-cancelled orders
+const conteoPlatos = {};
+noCancel.forEach((pedido) => {
+  desglosaDetalle(pedido.detalle_pedido).forEach(({ nombre, cantidad }) => {
+    if (!nombre) return;
+    conteoPlatos[nombre] = (conteoPlatos[nombre] ?? 0) + cantidad;
+  });
+});
+
+// 2. Normalize names against official platos table
+const conteoNormalizado = {};
+if (nombresOficiales.length > 0) {
+  Object.entries(conteoPlatos).forEach(([nombreExtraido, cant]) => {
+    const ne = nombreExtraido.toLowerCase().trim();
+    const oficial = nombresOficiales.find((no) => {
+      const n = no.toLowerCase().trim();
+      return n === ne || ne.includes(n) || n.includes(ne);
+    });
+    const clave = oficial ?? nombreExtraido;
+    conteoNormalizado[clave] = (conteoNormalizado[clave] ?? 0) + cant;
+  });
+}
+
+// 3. Sort and take top 5
+const topPlatos = Object.entries(conteoNormalizado)
+  .sort(([, a], [, b]) => b - a)
+  .slice(0, 5)
+  .map(([nombre, unidades]) => ({ nombre, unidades }));
+```
+
+**Key features:**
+- Counts **actual units sold** (not orders containing the dish)
+- Example: If 3 orders each have 2× Ceviche, chart shows **6 units**, not 3
+- Normalizes variations like "Ceviche mixto" and "ceviche mixto" to the same dish
+- Uses official names from `platos` table when available
+
+**Display:**
+- Bar width: Percentage relative to top dish (100%)
+- Labels: "1. Ceviche Mixto" with "23 unid." on the right
+- Blue bars with smooth animation (`transition-all duration-500`)
+
+<Tip>
+  If no official dish names are found in the `platos` table, the chart uses names as-is from `detalle_pedido`. This is a graceful fallback.
+</Tip>
+
+### Horas Pico de Pedidos (Peak Hours)
+
+Bar chart showing order volume by hour of day (9:00 AM to 6:00 PM).
+
+**Calculation:**
+
+```javascript
+const conteoPorHora = {};
+pedidos.forEach((p) => {
+  if (!p.created_at) return;
+  const hora = new Date(p.created_at).getHours();
+  if (hora < 9 || hora > 18) return; // Outside business hours
+  conteoPorHora[hora] = (conteoPorHora[hora] ?? 0) + 1;
+});
+
+// Convert to array with labels
+const distribucionHoras = Array.from({ length: 10 }, (_, i) => {
+  const h = i + 9; // 9 to 18
+  return {
+    hora: h,
+    label: `${String(h).padStart(2, "0")}:00`,
+    pedidos: conteoPorHora[h] ?? 0,
+  };
+});
+```
+
+**Color-coded intensity:**
+
+| Ratio | Color | Meaning |
+|-------|-------|----------|
+| ≥ 80% of max | Red (`bg-red-500`) | High demand |
+| 50-79% | Orange (`bg-orange-400`) | Medium-high |
+| 20-49% | Blue (`bg-primary`) | Normal |
+| < 20% | Gray (`bg-gray-300`) | Low demand |
+
+**Interactive features:**
+- Hover tooltip: "13:00 — 8 pedidos"
+- Value labels above each bar
+- X-axis labels: "09h", "10h", ..., "18h"
+- Legend showing color meanings
+- Total pedidos count in footer
+
+<Note>
+  Only orders created between **9:00 AM and 6:00 PM** are included, matching typical restaurant business hours.
+</Note>
+
+### Métodos de Pago (Payment Methods)
+
+Donut chart showing distribution of payment methods for **completed orders only**.
+
+**Calculation:**
+
+```javascript
+const porPago = {};
+completados.forEach((p) => {
+  const m = p.metodo_pago ?? "Otro";
+  porPago[m] = (porPago[m] ?? 0) + 1;
+});
+```
+
+**Color mapping:**
+
+| Method | Color | Icon |
+|--------|-------|------|
+| Yape | Purple (`#1A6BBA`) | `smartphone` |
+| Plin | Blue (`#8B5CF6`) | `smartphone` |
+| Efectivo | Green (`#10B981`) | `payments` |
+| Tarjeta | Orange (`#F59E0B`) | `credit_card` |
+
+**Display:**
+- CSS conic-gradient donut (hollow center via `mask-image`)
+- Legend with mini progress bars and percentages
+- Example: "Yape" with purple dot, 16px progress bar at 45%, "45%"
+
+**Donut gradient generation:**
+
+```javascript
+const buildDonutPago = (porPago = {}) => {
+  const total = Object.values(porPago).reduce((a, b) => a + b, 0);
+  if (total === 0) return { gradient: "#E2E8F0 0% 100%", items: [] };
+
+  let acum = 0;
+  const segmentos = Object.entries(porPago).map(([nombre, cant]) => {
+    const desde = acum;
+    acum += (cant / total) * 100;
+    return { 
+      nombre, 
+      cant, 
+      pct: Math.round((cant / total) * 100), 
+      color: colores[nombre] ?? "#94a3b8", 
+      desde, 
+      hasta: acum 
+    };
+  });
+  
+  const gradient = segmentos
+    .map((s) => `${s.color} ${s.desde.toFixed(1)}% ${s.hasta.toFixed(1)}%`)
+    .join(", ");
+  
+  return { gradient, items: segmentos };
+};
+```
+
+### Tipo de Servicio (Service Type)
+
+Split view comparing Delivery vs. Recojo orders.
+
+**Calculation:**
+
+```javascript
+const delivery = noCancel.filter((p) => 
+  (p.tipo_servicio ?? "").toLowerCase() === "delivery"
+).length;
+
+const recojo = noCancel.filter((p) => 
+  (p.tipo_servicio ?? "").toLowerCase() === "recojo"
+).length;
+
+const totalServicios = delivery + recojo;
+const pctDelivery = totalServicios > 0 
+  ? Math.round((delivery / totalServicios) * 100) 
+  : 0;
+const pctRecojo = 100 - pctDelivery;
+```
+
+**Display:**
+- Two columns with icons: 🛵 (Delivery) and 🏠 (Recojo)
+- Large percentage for each (e.g., "65%" and "35%")
+- Count subtitle ("28 pedidos")
+- Horizontal progress bar split by color:
+  - Left side (blue): Delivery percentage
+  - Right side (orange): Recojo percentage
+
+<Note>
+  This metric includes **all non-cancelled orders**, not just completed ones, to show current demand distribution.
+</Note>
+
+## Últimos Pedidos (Recent Orders Table)
+
+Table showing the 5 most recent orders in the selected period.
+
+**Columns:**
+
+| Column | Source | Format |
+|--------|--------|--------|
+| ID | `id` | `#a3f4c2d1` (8 chars) |
+| Cliente | `cliente_nombre` | Plain text |
+| Detalle | `detalle_pedido` | "2× Ceviche · 1× Chicha" |
+| Total | `total_final` or `total_estimado` | `S/ 45.00` |
+| Método Pago | `metodo_pago` | Badge (color-coded) |
+| Servicio | `tipo_servicio` | Badge (Delivery/Recojo) |
+| Dirección | `direccion` | With location icon (if delivery) |
+| Estado | `estado_pedido` | Badge with dot indicator |
+
+**State badge colors:**
+
+```javascript
+const estadoBadge = (estado) => {
+  const map = {
+    pendiente:  { bg: "bg-blue-50 text-blue-700",   dot: "bg-blue-500",   label: "Pendiente"  },
+    cocina:     { bg: "bg-yellow-50 text-yellow-700", dot: "bg-yellow-500", label: "En Cocina"  },
+    entregar:   { bg: "bg-orange-50 text-orange-700", dot: "bg-orange-500", label: "Por Entregar" },
+    completado: { bg: "bg-green-50 text-green-700",  dot: "bg-green-500",  label: "Completado" },
+    cancelado:  { bg: "bg-red-50 text-red-700",      dot: "bg-red-500",    label: "Cancelado"  },
+  };
+  return map[estado] ?? { bg: "bg-gray-100", dot: "bg-gray-400", label: estado };
+};
+```
+
+**Detalle formatting:**
+
+The `formatDetalle()` function normalizes the JSONB `detalle_pedido` field:
+
+```javascript
+const formatDetalle = (d) => {
+  // Handles: null, string, JSON string, array, object
+  // Returns: "2× Ceviche · 1× Chicha Morada" or "Sin detalle"
+  
+  if (Array.isArray(src)) {
+    return src
+      .map((i) => {
+        const cant = i.cantidad ?? i.quantity ?? 1;
+        return `${cant}× ${extraerNombre(i)}`;
+      })
+      .join(" · ");
+  }
+  // ... fallback logic
+};
+```
+
+**"Ver todos" link:** Routes to `/historial` (Order History page)
+
+## Loading States
+
+All dashboard components show skeleton loaders during data fetch:
+
+<CardGroup cols={2}>
+  <Card title="KPI Cards" icon="spinner">
+    Gray animated rectangles for values (`h-8 w-28`)
+  </Card>
+  <Card title="Bar Chart" icon="chart-column">
+    Random-height bars with pulse animation
+  </Card>
+  <Card title="Donut Chart" icon="circle-notch">
+    Circular skeleton (`w-32 h-32 rounded-full`)
+  </Card>
+  <Card title="Table Rows" icon="table">
+    3 placeholder rows with pulse effect
+  </Card>
+</CardGroup>
+
+**Example:**
+
+```javascript
+{loading ? (
+  <Skeleton className="h-8 w-28 mt-1" />
+) : (
+  <span className="text-2xl font-bold">{value}</span>
+)}
+```
+
+## Empty States
+
+Graceful empty states when no data is available:
+
+- **No orders:** Gray icon with "Sin pedidos registrados aún"
+- **No chart data:** "Sin datos" with relevant icon (bar_chart, donut_large)
+- **Filter mismatch:** "Sin resultados — Prueba cambiando el período"
+
+## Data Flow
+
+The `useDashboard` hook orchestrates all data loading:
+
+```javascript
+export const useDashboard = (periodo) => {
+  const [todosPedidos, setTodosPedidos] = useState([]);
+  const [nombresPlatos, setNombresPlatos] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const cargar = useCallback(async () => {
+    // Parallel fetch: orders + dish names
+    const [pedidosData, platosRes] = await Promise.all([
+      getStatsDashboard(),
+      supabase.from("platos").select("nombre").eq("activo", true),
+    ]);
+    
+    setTodosPedidos(pedidosData);
+    setNombresPlatos((platosRes.data ?? []).map((p) => p.nombre));
+  }, []);
+
+  // Filter by period (client-side)
+  const pedidosFiltrados = todosPedidos.filter((p) => {
+    const f = new Date(p.created_at);
+    return f >= rango.desde && f < rango.hasta;
+  });
+
+  // Calculate stats
+  const stats = calcularStats(pedidosFiltrados, nombresPlatos);
+
+  return { stats, loading, error, recargar: cargar };
+};
+```
+
+**Key optimizations:**
+- Parallel fetch of orders and dish names (not sequential)
+- Client-side date filtering (avoids timezone bugs)
+- Graceful degradation if `platos` table load fails
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Order History" icon="clock-rotate-left" href="/features/order-history">
+    Deep-dive into completed and cancelled orders
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration/supabase-setup">
+    Set up your Supabase backend
+  </Card>
+</CardGroup>

@@ -1,0 +1,175 @@
+---
+title: 'AuthContext'
+description: 'Manage user authentication state across your application'
+icon: 'shield-check'
+---
+
+## Overview
+
+The `AuthContext` provides authentication state management using Supabase Auth. It handles user sessions, login, logout, and automatically recovers sessions on page reload.
+
+## Setup
+
+Wrap your application with the `AuthProvider` to enable authentication throughout your app:
+
+```jsx
+import { AuthProvider } from './context/AuthContext';
+
+function App() {
+  return (
+    <AuthProvider>
+      <YourApp />
+    </AuthProvider>
+  );
+}
+```
+
+<Note>
+The provider will not render children until the initial session check is complete (`loading === false`). This prevents a flash of the login screen when a valid session exists.
+</Note>
+
+## Context Values
+
+Access these values using the `useAuth()` hook:
+
+<ResponseField name="user" type="object | null">
+  The currently authenticated user object from Supabase Auth. `null` if not authenticated.
+</ResponseField>
+
+<ResponseField name="loading" type="boolean">
+  `true` while checking for an existing session on initial load. `false` once the session check is complete.
+</ResponseField>
+
+<ResponseField name="login" type="function">
+  Authenticates a user with email and password.
+  
+  **Parameters:**
+  - `email` (string) - User's email address
+  - `password` (string) - User's password
+  
+  **Returns:** Promise that resolves to the authenticated user object
+  
+  **Throws:** Error if credentials are invalid
+</ResponseField>
+
+<ResponseField name="logout" type="function">
+  Signs out the current user and clears the session.
+  
+  **Returns:** Promise that resolves when logout is complete
+</ResponseField>
+
+## Usage
+
+### Basic Authentication Check
+
+```jsx
+import { useAuth } from './context/AuthContext';
+
+function Dashboard() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!user) {
+    return <div>Please log in</div>;
+  }
+
+  return <div>Welcome, {user.email}!</div>;
+}
+```
+
+### Login Form
+
+```jsx
+import { useState } from 'react';
+import { useAuth } from './context/AuthContext';
+
+function LoginPage() {
+  const { login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    
+    try {
+      await login(email, password);
+      // User is now authenticated
+    } catch (err) {
+      setError('Invalid credentials');
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Email"
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="Password"
+      />
+      {error && <p>{error}</p>}
+      <button type="submit">Log In</button>
+    </form>
+  );
+}
+```
+
+### Logout Button
+
+```jsx
+import { useAuth } from './context/AuthContext';
+
+function LogoutButton() {
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      // User is now logged out
+    } catch (err) {
+      console.error('Logout failed:', err);
+    }
+  };
+
+  return <button onClick={handleLogout}>Log Out</button>;
+}
+```
+
+### Protected Route
+
+```jsx
+import { Navigate } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
+
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
+```
+
+## Implementation Details
+
+- **Session Recovery**: On mount, the provider automatically checks for an existing session using `getSession()` from the auth service
+- **Real-time Updates**: Subscribes to auth state changes (login, logout, token refresh) and automatically updates the user state
+- **Loading State**: The `loading` flag is `true` during initial session check and becomes `false` once complete. Children are not rendered until `loading` is `false`
+- **Error Handling**: The `login` function throws errors that must be caught by the calling component

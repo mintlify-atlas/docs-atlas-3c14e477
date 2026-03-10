@@ -1,0 +1,367 @@
+---
+title: Kanban Board Workflow
+description: Visual order management with drag-and-drop state transitions
+icon: columns
+---
+
+## Overview
+
+The Kanban board provides a visual workflow for managing orders from arrival to completion. Orders progress through four states, each represented by a column:
+
+**pendiente → cocina → entregar → completado**
+
+<Note>
+  Orders can be cancelled from any state, transitioning them to a "cancelado" state that's visible only in the Order History view.
+</Note>
+
+## Workflow States
+
+### 1. Pendiente (Nuevos)
+
+**Purpose:** New orders that need kitchen confirmation
+
+<Card title="Visual Design" icon="palette">
+  - **Color:** Blue accent (`border-t-blue-500`)
+  - **Label:** "Nuevos"
+  - **Badge:** Blue dot indicator
+  - **Action Button:** "Aceptar → Cocina" (primary blue)
+</Card>
+
+**When orders arrive here:**
+- New WhatsApp orders via AI assistant
+- Manual order entry
+- Any order in `estado_pedido = 'pendiente'`
+
+**What you see on each card:**
+- Order ID (first 8 characters of UUID)
+- Customer name
+- Item chips (e.g., "2× Ceviche", "1× Chicha Morada")
+- Total amount (S/)
+- Delivery address (if tipo_servicio = 'delivery')
+- Phone number
+- Time elapsed since creation
+- Service type icon (delivery 🛵 or recojo 🏠)
+
+**User actions:**
+- Click "Aceptar → Cocina" to move to next state
+- Click ❌ to cancel order
+
+### 2. Cocina (En Cocina)
+
+**Purpose:** Orders being prepared by the kitchen
+
+<Card title="Visual Design" icon="palette">
+  - **Color:** Yellow accent (`border-t-yellow-500`)
+  - **Label:** "En Cocina"
+  - **Badge:** Yellow dot indicator
+  - **Action Button:** "Listo → Entregar" (yellow background)
+</Card>
+
+**When orders arrive here:**
+- Clicked "Aceptar → Cocina" from Pendiente column
+- `estado_pedido = 'cocina'`
+
+**Triggered webhook:**
+```javascript
+webhookPedidoAceptado(pedido) // Notifies N8N: order accepted
+```
+
+**What happens:**
+1. Order moves to Cocina column with yellow accent
+2. Timer continues to track preparation time
+3. Kitchen staff can see all active orders
+
+**User actions:**
+- Click "Listo → Entregar" when food is ready
+- Click ❌ to cancel (e.g., out of ingredients)
+
+### 3. Entregar (Por Entregar)
+
+**Purpose:** Orders ready for pickup or delivery
+
+<Card title="Visual Design" icon="palette">
+  - **Color:** Orange accent (`border-t-orange-500`)
+  - **Label:** "Por Entregar"
+  - **Badge:** Orange dot indicator
+  - **Action Button:** "Completar" (green, full width)
+</Card>
+
+**When orders arrive here:**
+- Clicked "Listo → Entregar" from Cocina column
+- `estado_pedido = 'entregar'`
+
+**Triggered webhook:**
+```javascript
+webhookPedidoListo(pedido) // Notifies customer: order ready
+```
+
+**What happens:**
+1. Order moves to Entregar column with orange accent
+2. Customer receives WhatsApp notification (via N8N)
+3. Delivery driver or customer can pick up
+
+**User actions:**
+- Click "Completar" when order is handed off
+- Click ❌ to cancel (e.g., customer no-show)
+
+### 4. Completado (Completados / En Camino)
+
+**Purpose:** Successfully fulfilled orders
+
+<Card title="Visual Design" icon="palette">
+  - **Color:** Green accent (`border-t-green-500`)
+  - **Label:** "Completados / En Camino"
+  - **Badge:** Green dot indicator
+  - **Opacity:** 70% (faded, non-interactive)
+</Card>
+
+**When orders arrive here:**
+- Clicked "Completar" from Entregar column
+- `estado_pedido = 'completado'`
+
+**Triggered webhooks:**
+```javascript
+// Different webhook based on service type
+if (pedido.tipo_servicio === "delivery") {
+  webhookPedidoDespachado(pedido); // Order dispatched for delivery
+} else {
+  webhookPedidoCompletado(pedido); // Order picked up
+}
+
+// Final workflow: WhatsApp "provecho" message + memory cleanup
+webhookFinalizarPedido(pedido);
+```
+
+**What happens:**
+1. Order moves to Completado column (faded appearance)
+2. Customer receives "provecho" WhatsApp message
+3. N8N clears customer conversation memory
+4. Browser notification shows completion
+
+<Tip>
+  Only the last 3 completed orders are shown in the Kanban view to keep the board clean. All completed orders remain accessible in Order History.
+</Tip>
+
+**Display behavior:**
+```javascript
+if (estado === "completado") {
+  cards = cards
+    .slice()
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, MAX_COMPLETADOS); // MAX_COMPLETADOS = 3
+}
+```
+
+## State Transition Logic
+
+The `avanzarEstado()` function handles all forward state transitions:
+
+```javascript
+const avanzarEstado = async (pedido) => {
+  const idx = COLUMN_ORDER.indexOf(pedido.estado_pedido);
+  const siguiente = COLUMN_ORDER[idx + 1];
+  if (!siguiente) return; // Already at final state
+
+  const actualizado = await updateEstadoPedido(pedido.id, siguiente);
+  
+  // Optimistic UI update (don't wait for Realtime)
+  setPedidos((prev) =>
+    prev.map((p) => (p.id === actualizado.id ? actualizado : p))
+  );
+  
+  // Trigger webhooks based on transition
+  if (pedido.estado_pedido === "pendiente") 
+    webhookPedidoAceptado(pedido).catch(console.warn);
+  if (pedido.estado_pedido === "cocina") 
+    webhookPedidoListo(pedido).catch(console.warn);
+  if (pedido.estado_pedido === "entregar") {
+    const fn = pedido.tipo_servicio === "delivery" 
+      ? webhookPedidoDespachado 
+      : webhookPedidoCompletado;
+    fn(pedido).catch(console.warn);
+    
+    // Final notification
+    pushCompletado(
+      String(pedido.id).slice(0, 8), 
+      pedido.cliente_nombre, 
+      total
+    );
+    webhookFinalizarPedido(pedido).catch(console.warn);
+  }
+};
+```
+
+<Note>
+  All webhook calls are non-blocking (`.catch(console.warn)`) to ensure the UI remains responsive even if external services are slow or unavailable.
+</Note>
+
+## Cancellation Flow
+
+Orders can be cancelled from **any state** (pendiente, cocina, or entregar):
+
+```javascript
+const cancelar = async (pedido) => {
+  const actualizado = await cancelarPedido(pedido.id);
+  
+  // Remove from Kanban (optimistic update)
+  setPedidos((prev) =>
+    prev.map((p) => (p.id === actualizado.id ? actualizado : p))
+  );
+  
+  // Notify external systems
+  webhookPedidoCancelado(pedido).catch(console.warn);
+  
+  // Browser notification
+  pushCancelado(
+    String(pedido.id).slice(0, 8), 
+    pedido.cliente_nombre, 
+    total
+  );
+};
+```
+
+**What happens:**
+1. Order disappears from Kanban board immediately
+2. `estado_pedido` changes to `"cancelado"`
+3. Cancelled webhook fires (N8N can notify customer)
+4. Order moves to "Cancelados" column in Order History
+
+<Warning>
+  Cancellation is irreversible. Always confirm with the user before cancelling an order.
+</Warning>
+
+## Order Card Components
+
+### Active Order Card
+
+Shown in Pendiente, Cocina, and Entregar columns:
+
+<CardGroup cols={2}>
+  <Card title="Header Section" icon="id-card">
+    - Drag handle (visible on hover)
+    - Order ID (8-char UUID)
+    - Elapsed time badge (color-coded)
+    - Cancel button
+  </Card>
+  <Card title="Body Section" icon="file-lines">
+    - Customer name (bold)
+    - Item chips with quantities
+    - Total amount
+    - Delivery address (if applicable)
+    - Phone number
+  </Card>
+  <Card title="Footer Section" icon="sliders">
+    - Service type icon (delivery/recojo)
+    - Action button (state-specific)
+  </Card>
+</CardGroup>
+
+### Time Tracking
+
+Elapsed time is calculated and color-coded:
+
+```javascript
+const minutos = Math.floor((Date.now() - new Date(card.created_at)) / 60000);
+
+const tiempoColor =
+  minutos < 10 ? "text-green-700 bg-green-50" :  // < 10 min: green
+  minutos < 20 ? "text-orange-700 bg-orange-50" : // 10-20 min: orange
+  "text-red-700 bg-red-50";                      // > 20 min: red
+```
+
+**Display logic:**
+- Updates every 60 seconds (interval refresh)
+- Shows "< 1 min" for very recent orders
+- Shows "23 min" format for longer waits
+
+<Tip>
+  The time badge helps staff prioritize older orders and maintain service quality.
+</Tip>
+
+### Completed Order Card
+
+Shown in Completado column (read-only, faded):
+
+- Green checkmark icon
+- Greyed-out customer name (strikethrough)
+- Item chips (same as active cards)
+- Delivery address (if applicable)
+- No action buttons (non-interactive)
+- 70% opacity with hover effect (100% on hover)
+
+## Item Display
+
+The `DetalleChips` component renders order items as colored chips:
+
+```javascript
+const items = desglosaDetalle(detalle_pedido);
+// Returns: [{ nombre: "Ceviche", cantidad: 2 }, ...]
+
+items.map(({ nombre, cantidad }, idx) => (
+  <span className="bg-blue-50 text-blue-700 text-[11px] px-1.5 py-0.5 rounded">
+    {cantidad > 1 ? `${cantidad}× ` : ""}{nombre}
+  </span>
+));
+```
+
+**Supported formats:**
+- JSONB array: `[{nombre: "Ceviche", cantidad: 2}, ...]`
+- JSON string: `"[{nombre: \"Ceviche\", cantidad: 2}]"`
+- Plain text: `"Ceviche + Chicha Morada"`
+- Prefixed quantities: `"2x Ceviche, 1x Chicha"`
+
+<Note>
+  The `desglosaDetalle()` utility in `pedidosUtils.js` normalizes all these formats into a consistent structure.
+</Note>
+
+## Visual Customization
+
+Each column has a distinct visual identity:
+
+```javascript
+const COLUMN_CONFIG = {
+  pendiente: {
+    label: "Nuevos",
+    dotColor: "bg-blue-500",
+    headerAccent: "border-t-2 border-t-blue-500",
+    acento: "border-l-blue-400",
+    btnLabel: "Aceptar → Cocina",
+    btnClass: "bg-primary/10 text-primary hover:bg-primary hover:text-white",
+  },
+  // ... other states
+};
+```
+
+## User Experience Features
+
+<CardGroup cols={3}>
+  <Card title="Optimistic Updates" icon="bolt">
+    UI updates immediately without waiting for server confirmation
+  </Card>
+  <Card title="Real-time Sync" icon="arrows-rotate">
+    Changes appear on all devices simultaneously
+  </Card>
+  <Card title="Smooth Transitions" icon="wand-magic-sparkles">
+    CSS transitions for card movement and state changes
+  </Card>
+  <Card title="Empty States" icon="inbox">
+    Friendly "Sin pedidos" message when columns are empty
+  </Card>
+  <Card title="Active Count Badge" icon="bell">
+    Header shows total active orders with red pulse animation
+  </Card>
+  <Card title="Confirmation Dialogs" icon="triangle-exclamation">
+    Prevents accidental cancellations with confirm prompt
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Order History" icon="clock-rotate-left" href="/features/order-history">
+    View completed and cancelled orders with filtering
+  </Card>
+  <Card title="Dashboard Analytics" icon="chart-line" href="/features/dashboard-analytics">
+    Analyze order patterns and revenue metrics
+  </Card>
+</CardGroup>

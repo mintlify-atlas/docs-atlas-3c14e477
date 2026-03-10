@@ -1,0 +1,327 @@
+---
+title: "usePlatos"
+description: "Menu management hook for CRUD operations on dishes, prices, and categories"
+---
+
+## Overview
+
+The `usePlatos` hook provides complete CRUD functionality for managing the restaurant menu. It handles dishes (`platos` table), multi-size pricing (`plato_precios` table), and categories (`categorias` table) with automatic data relationships.
+
+## Location
+
+`src/hooks/usePlatos.js`
+
+## Usage
+
+```javascript
+import { usePlatos } from "../hooks/usePlatos";
+
+function ConfiguracionPage() {
+  const {
+    platos,
+    porCategoria,
+    categorias,
+    loading,
+    error,
+    agregar,
+    editar,
+    editarPrecio,
+    toggleDisp,
+    eliminar,
+    recargar
+  } = usePlatos();
+
+  const handleSave = async (form) => {
+    await agregar({
+      nombre: form.nombre,
+      descripcion: form.descripcion,
+      categoria_id: form.categoria_id,
+      precios: [
+        { tamano: "Personal", precio: 15.00 },
+        { tamano: "Mediano", precio: 25.00 }
+      ]
+    });
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("¿Eliminar este plato?")) return;
+    await eliminar(id);
+  };
+
+  return (
+    <div>
+      {categorias.map(cat => (
+        <div key={cat.id}>
+          <h2>{cat.nombre}</h2>
+          {porCategoria[cat.nombre]?.map(plato => (
+            <div key={plato.id}>
+              {plato.nombre} - {plato.activo ? "Disponible" : "No disponible"}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Return Value
+
+<ResponseField name="platos" type="array" required>
+  Array of all dishes with their prices joined. Each dish object contains:
+  
+  ```typescript
+  {
+    id: number,
+    nombre: string,
+    descripcion: string | null,
+    categoria_id: number,
+    categoria_nombre: string,  // Joined from categorias table
+    activo: boolean,
+    precios: Array<{           // Joined from plato_precios table
+      id: number,
+      plato_id: number,
+      tamano: string,          // e.g. "Personal", "Mediano", "Grande"
+      precio: number
+    }>
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="porCategoria" type="object" required>
+  Dishes grouped by category name, preserving category order by ID
+  
+  ```typescript
+  {
+    "Ceviches": Array<Plato>,
+    "Chicharrones": Array<Plato>,
+    // ... other categories
+  }
+  ```
+  
+  Useful for rendering categorized menus.
+</ResponseField>
+
+<ResponseField name="categorias" type="array" required>
+  Array of all categories, ordered by ID
+  
+  ```typescript
+  Array<{
+    id: number,
+    nombre: string
+  }>
+  ```
+</ResponseField>
+
+<ResponseField name="loading" type="boolean" required>
+  `true` during initial data fetch, `false` once loaded
+</ResponseField>
+
+<ResponseField name="error" type="string | null" required>
+  Error message if data fetch failed, otherwise `null`
+</ResponseField>
+
+<ResponseField name="agregar" type="function" required>
+  Creates a new dish with optional pricing tiers
+  
+  ```javascript
+  async (data: {
+    nombre: string,
+    descripcion?: string,
+    categoria_id: number,
+    precios?: Array<{
+      tamano: string,
+      precio: number
+    }>
+  }) => void
+  ```
+  
+  **Behavior:**
+  1. Creates dish in `platos` table
+  2. Creates all price entries in `plato_precios` table
+  3. Reloads full data to get joined structure
+</ResponseField>
+
+<ResponseField name="editar" type="function" required>
+  Updates dish name, description, or category
+  
+  ```javascript
+  async (id: number, cambios: {
+    nombre?: string,
+    descripcion?: string,
+    categoria_id?: number
+  }) => void
+  ```
+  
+  Updates local state optimistically without reloading.
+</ResponseField>
+
+<ResponseField name="editarPrecio" type="function" required>
+  Updates a specific price tier for a dish
+  
+  ```javascript
+  async (precioId: number, cambios: {
+    tamano?: string,
+    precio?: number
+  }) => void
+  ```
+  
+  Updates the price in the `plato_precios` table and updates local state.
+</ResponseField>
+
+<ResponseField name="toggleDisp" type="function" required>
+  Toggles dish availability (activo field)
+  
+  ```javascript
+  async (id: number, activo: boolean) => void
+  ```
+  
+  Sets the `activo` flag. Inactive dishes are hidden from customer-facing menus.
+</ResponseField>
+
+<ResponseField name="eliminar" type="function" required>
+  Deletes a dish (cascades to prices)
+  
+  ```javascript
+  async (id: number) => void
+  ```
+  
+  **Warning:** This permanently deletes the dish and all associated prices. The database should have CASCADE constraints on `plato_precios.plato_id`.
+</ResponseField>
+
+<ResponseField name="recargar" type="function" required>
+  Manually reloads all dishes, categories, and prices
+  
+  ```javascript
+  async () => void
+  ```
+</ResponseField>
+
+## Data Flow
+
+### Initial Load
+
+```javascript
+Promise.all([
+  getPlatosConPrecios(),  // Joins platos + plato_precios + categorias
+  getCategorias()         // Simple category list
+])
+```
+
+Both queries run in parallel for optimal performance.
+
+### Create Flow (agregar)
+
+1. Create dish record → returns `nuevoPlato` with generated `id`
+2. Create price records using `nuevoPlato.id`
+3. Reload all data to get complete joined structure
+
+### Edit Flow (editar)
+
+1. Update dish in database
+2. Update local state by mapping over `platos` array
+3. No reload needed (optimistic update)
+
+### Price Edit Flow (editarPrecio)
+
+1. Update price in database
+2. Update local state by deeply mapping `platos[].precios[]`
+3. No reload needed
+
+## Database Schema
+
+### platos
+```sql
+CREATE TABLE platos (
+  id SERIAL PRIMARY KEY,
+  nombre VARCHAR NOT NULL,
+  descripcion TEXT,
+  categoria_id INTEGER REFERENCES categorias(id),
+  activo BOOLEAN DEFAULT true
+);
+```
+
+### plato_precios
+```sql
+CREATE TABLE plato_precios (
+  id SERIAL PRIMARY KEY,
+  plato_id INTEGER REFERENCES platos(id) ON DELETE CASCADE,
+  tamano VARCHAR NOT NULL,
+  precio NUMERIC NOT NULL
+);
+```
+
+### categorias
+```sql
+CREATE TABLE categorias (
+  id SERIAL PRIMARY KEY,
+  nombre VARCHAR NOT NULL
+);
+```
+
+## Dependencies
+
+- `getCategorias` - Fetches all categories
+- `getPlatosConPrecios` - Fetches dishes with joined prices and category names
+- `crearPlato` - Creates a new dish
+- `crearPreciosPlato` - Batch creates price tiers
+- `updatePlato` - Updates dish properties
+- `updatePrecio` - Updates a specific price
+- `deletePlato` - Deletes a dish
+- `toggleDisponibilidadPlato` - Toggles activo flag
+
+All service functions imported from `src/services/platosService.js`
+
+## Side Effects
+
+None. All mutations are explicit through the provided functions.
+
+## Error Handling
+
+- Initial load errors set the `error` state
+- Mutation errors are thrown and should be caught by the calling component
+- The hook does not automatically show user-facing error messages
+
+## Common Patterns
+
+### Grouping by Category
+
+```javascript
+const { porCategoria, categorias } = usePlatos();
+
+categorias.forEach(cat => {
+  const platosEnCategoria = porCategoria[cat.nombre] || [];
+  // Render category and its dishes
+});
+```
+
+### Multi-Size Pricing
+
+```javascript
+const { agregar } = usePlatos();
+
+await agregar({
+  nombre: "Ceviche Clásico",
+  categoria_id: 1,
+  precios: [
+    { tamano: "Personal", precio: 18.00 },
+    { tamano: "Para 2", precio: 32.00 },
+    { tamano: "Familiar", precio: 55.00 }
+  ]
+});
+```
+
+### Editing Individual Prices
+
+```javascript
+const { platos, editarPrecio } = usePlatos();
+
+const plato = platos.find(p => p.id === 5);
+const precioPersonal = plato.precios.find(pr => pr.tamano === "Personal");
+
+await editarPrecio(precioPersonal.id, { precio: 20.00 });
+```
+
+## Related
+
+- [Platos Service](/api/platos-service) - Underlying service functions including getPlatosConPrecios

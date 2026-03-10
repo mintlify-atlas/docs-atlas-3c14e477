@@ -1,0 +1,528 @@
+---
+title: 'Pedidos Service'
+description: 'Order management service for the Picanteria CRM'
+---
+
+## Overview
+
+The `pedidosService` provides functions to query and manage orders from the `public.pedidos_picanteria` table. It handles order lifecycle management, statistics calculation, and dashboard data retrieval.
+
+### Order States (Kanban Flow)
+
+```
+pendiente → cocina → entregar → completado
+any state → cancelado
+```
+
+### Database Schema
+
+The service interacts with the following table structure:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | uuid (PK) | Unique order identifier |
+| `telefono` | varchar | Customer phone number |
+| `cliente_nombre` | varchar | Customer name |
+| `detalle_pedido` | jsonb | Order items array: `[{nombre, cantidad, precio}]` |
+| `total_estimado` | numeric | Estimated total |
+| `total_final` | numeric | Final total (nullable) |
+| `metodo_pago` | varchar | Payment method: 'Yape', 'Plin', 'Efectivo', 'Tarjeta' |
+| `tipo_servicio` | varchar | Service type: 'delivery' or 'recojo' |
+| `estado_pedido` | varchar | Order status: 'pendiente', 'cocina', 'entregar', 'completado', 'cancelado' |
+| `direccion` | varchar | Delivery address (default: 'Sin dirección') |
+| `created_at` | timestamptz | Creation timestamp |
+
+---
+
+## Functions
+
+### getPedidosActivos
+
+Retrieves all active orders for the live Kanban board.
+
+```javascript
+import { getPedidosActivos } from '../services/pedidosService';
+
+const pedidos = await getPedidosActivos();
+```
+
+#### Returns
+
+<ResponseField name="data" type="array">
+  Array of active order objects
+  
+  <Expandable title="Order Object">
+    <ResponseField name="id" type="uuid">
+      Unique order identifier
+    </ResponseField>
+    
+    <ResponseField name="telefono" type="string">
+      Customer phone number
+    </ResponseField>
+    
+    <ResponseField name="cliente_nombre" type="string">
+      Customer name
+    </ResponseField>
+    
+    <ResponseField name="detalle_pedido" type="array">
+      Order items: `[{nombre: string, cantidad: number, precio: number}]`
+    </ResponseField>
+    
+    <ResponseField name="total_estimado" type="number">
+      Estimated total amount
+    </ResponseField>
+    
+    <ResponseField name="total_final" type="number | null">
+      Final total amount (nullable)
+    </ResponseField>
+    
+    <ResponseField name="metodo_pago" type="string">
+      Payment method: 'Yape' | 'Plin' | 'Efectivo' | 'Tarjeta'
+    </ResponseField>
+    
+    <ResponseField name="tipo_servicio" type="string">
+      Service type: 'delivery' | 'recojo'
+    </ResponseField>
+    
+    <ResponseField name="estado_pedido" type="string">
+      Order status: 'pendiente' | 'cocina' | 'entregar' | 'completado'
+    </ResponseField>
+    
+    <ResponseField name="direccion" type="string">
+      Delivery address
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string">
+      ISO timestamp of order creation
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Behavior
+
+- Filters orders with status: `pendiente`, `cocina`, `entregar`, or `completado`
+- Orders sorted by `created_at` ascending (oldest first)
+- Returns empty array if no active orders found
+
+#### Error Handling
+
+Throws Supabase error if database query fails.
+
+---
+
+### getPedidosHistorial
+
+Retrieves historical orders (completed and cancelled) with optional payment method filtering.
+
+```javascript
+import { getPedidosHistorial } from '../services/pedidosService';
+
+// Get all historical orders
+const historial = await getPedidosHistorial();
+
+// Filter by payment methods
+const yappe = await getPedidosHistorial({ pagos: ['Yape', 'Plin'] });
+```
+
+<ParamField path="options" type="object" optional>
+  Query options
+  
+  <Expandable title="Options">
+    <ParamField path="pagos" type="string[]" optional>
+      Array of payment methods to filter by. Valid values: 'Yape', 'Plin', 'Efectivo', 'Tarjeta'
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Returns
+
+<ResponseField name="data" type="array">
+  Array of historical order objects (same structure as `getPedidosActivos`)
+</ResponseField>
+
+#### Behavior
+
+- Filters orders with status: `completado` or `cancelado`
+- Orders sorted by `created_at` descending (most recent first)
+- Date filtering should be done client-side to avoid timezone issues
+- Returns empty array if no historical orders found
+
+#### Error Handling
+
+Throws Supabase error if database query fails.
+
+---
+
+### updateEstadoPedido
+
+Updates the status of an order (advances through Kanban flow).
+
+```javascript
+import { updateEstadoPedido } from '../services/pedidosService';
+
+const pedido = await updateEstadoPedido(
+  '123e4567-e89b-12d3-a456-426614174000',
+  'cocina'
+);
+```
+
+<ParamField path="id" type="uuid" required>
+  Order UUID to update
+</ParamField>
+
+<ParamField path="nuevoEstado" type="string" required>
+  New order status. Valid values: 'pendiente', 'cocina', 'entregar', 'completado', 'cancelado'
+</ParamField>
+
+#### Returns
+
+<ResponseField name="data" type="object">
+  Updated order object with all fields
+</ResponseField>
+
+#### Error Handling
+
+Throws Supabase error if:
+- Order ID not found
+- Invalid status value
+- Database update fails
+
+---
+
+### cancelarPedido
+
+Cancels an order by setting its status to 'cancelado'.
+
+```javascript
+import { cancelarPedido } from '../services/pedidosService';
+
+const pedido = await cancelarPedido('123e4567-e89b-12d3-a456-426614174000');
+```
+
+<ParamField path="id" type="uuid" required>
+  Order UUID to cancel
+</ParamField>
+
+#### Returns
+
+<ResponseField name="data" type="object">
+  Cancelled order object with `estado_pedido` set to 'cancelado'
+</ResponseField>
+
+#### Error Handling
+
+Throws Supabase error if order ID not found or update fails.
+
+---
+
+### getStatsDashboard
+
+Retrieves all orders for dashboard statistics calculation.
+
+```javascript
+import { getStatsDashboard } from '../services/pedidosService';
+
+const pedidos = await getStatsDashboard();
+```
+
+#### Returns
+
+<ResponseField name="data" type="array">
+  Array of all orders with selected fields
+  
+  <Expandable title="Order Stats Object">
+    <ResponseField name="total_final" type="number | null">
+      Final total amount
+    </ResponseField>
+    
+    <ResponseField name="total_estimado" type="number">
+      Estimated total amount
+    </ResponseField>
+    
+    <ResponseField name="estado_pedido" type="string">
+      Order status
+    </ResponseField>
+    
+    <ResponseField name="metodo_pago" type="string">
+      Payment method
+    </ResponseField>
+    
+    <ResponseField name="tipo_servicio" type="string">
+      Service type
+    </ResponseField>
+    
+    <ResponseField name="detalle_pedido" type="array">
+      Order items
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string">
+      Creation timestamp
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Behavior
+
+- Returns ALL orders without date filtering
+- Date range filtering should be applied client-side
+- Optimized to fetch only required fields for statistics
+
+#### Error Handling
+
+Throws Supabase error if database query fails.
+
+---
+
+### calcularStats
+
+Calculates KPIs and statistics from a filtered set of orders.
+
+```javascript
+import { calcularStats } from '../services/pedidosService';
+
+// Basic usage
+const stats = calcularStats(pedidos);
+
+// With dish name normalization
+const platosOficiales = ['Ceviche Mixto', 'Chicharrón de Pollo', 'Leche de Tigre'];
+const statsNormalized = calcularStats(pedidos, platosOficiales);
+```
+
+<ParamField path="pedidos" type="array" required>
+  Array of order objects (typically filtered by date range client-side)
+</ParamField>
+
+<ParamField path="nombresOficiales" type="string[]" optional default="[]">
+  Array of official dish names from the `platos` table for name normalization. This groups variations like "Ceviche mixto" and "ceviche mixto" under the same name.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="stats" type="object">
+  Calculated statistics object
+  
+  <Expandable title="Stats Object">
+    <ResponseField name="totalIngresos" type="number">
+      Total revenue from completed orders (uses `total_final` or falls back to `total_estimado`)
+    </ResponseField>
+    
+    <ResponseField name="ticketPromedio" type="number">
+      Average order value from completed orders
+    </ResponseField>
+    
+    <ResponseField name="tasaExito" type="number">
+      Success rate percentage (non-cancelled orders / total orders × 100)
+    </ResponseField>
+    
+    <ResponseField name="totalPedidos" type="number">
+      Total number of orders in the input array
+    </ResponseField>
+    
+    <ResponseField name="pedidosExitosos" type="number">
+      Number of non-cancelled orders
+    </ResponseField>
+    
+    <ResponseField name="cancelados" type="number">
+      Number of cancelled orders
+    </ResponseField>
+    
+    <ResponseField name="topPlatos" type="array">
+      Top 5 most ordered dishes: `[{nombre: string, unidades: number}]`
+    </ResponseField>
+    
+    <ResponseField name="porPago" type="object">
+      Payment method distribution from completed orders: `{Yape: 10, Plin: 5, ...}`
+    </ResponseField>
+    
+    <ResponseField name="delivery" type="number">
+      Number of delivery orders (non-cancelled)
+    </ResponseField>
+    
+    <ResponseField name="recojo" type="number">
+      Number of pickup orders (non-cancelled)
+    </ResponseField>
+    
+    <ResponseField name="distribucionHoras" type="array">
+      Hourly distribution array (9:00 - 18:00): `[{hora: 9, label: '09:00', pedidos: 5}, ...]`
+    </ResponseField>
+    
+    <ResponseField name="topHoras" type="array">
+      Top 3 peak hours sorted by order count
+    </ResponseField>
+    
+    <ResponseField name="maxHora" type="number">
+      Maximum number of orders in any single hour
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Behavior
+
+**Top Dishes Calculation:**
+- Iterates through all non-cancelled orders
+- Extracts individual items from `detalle_pedido` using `desglosaDetalle`
+- Sums actual quantities (e.g., if order has `{nombre: 'Ceviche', cantidad: 2}`, adds 2 units, not 1)
+- Normalizes dish names if `nombresOficiales` provided (case-insensitive matching)
+- Returns top 5 dishes by total units sold
+
+**Peak Hours:**
+- Only counts orders within business hours (9:00 - 18:00 local time)
+- Orders outside this range are excluded
+- Returns fixed 10-hour array for consistent charting
+
+**Revenue:**
+- Only includes completed orders
+- Uses `total_final` if available, otherwise `total_estimado`
+
+---
+
+### getUltimosPedidos
+
+Retrieves the N most recent orders for the dashboard table.
+
+```javascript
+import { getUltimosPedidos } from '../services/pedidosService';
+
+// Get last 5 orders
+const recientes = await getUltimosPedidos();
+
+// Get last 10 orders
+const recientes10 = await getUltimosPedidos(10);
+```
+
+<ParamField path="limite" type="number" optional default={5}>
+  Maximum number of orders to retrieve
+</ParamField>
+
+#### Returns
+
+<ResponseField name="data" type="array">
+  Array of most recent order objects (same structure as `getPedidosActivos`)
+</ResponseField>
+
+#### Behavior
+
+- Orders sorted by `created_at` descending (most recent first)
+- Includes orders of all statuses
+- Returns empty array if no orders exist
+
+#### Error Handling
+
+Throws Supabase error if database query fails.
+
+---
+
+## Re-exported Utilities
+
+### desglosaDetalle
+
+Utility function re-exported from `pedidosUtils` for backwards compatibility.
+
+```javascript
+import { desglosaDetalle } from '../services/pedidosService';
+
+const items = desglosaDetalle([
+  { nombre: 'Ceviche', cantidad: 2, precio: 25 },
+  { nombre: 'Chicha', cantidad: 1, precio: 5 }
+]);
+// Returns: [{nombre: 'Ceviche', cantidad: 2}, {nombre: 'Chicha', cantidad: 1}]
+```
+
+See `pedidosUtils` documentation for full details.
+
+---
+
+## Usage Examples
+
+<CodeGroup>
+
+```javascript Dashboard Stats
+import { getStatsDashboard, calcularStats } from '../services/pedidosService';
+import { getPlatosConPrecios } from '../services/platosService';
+
+// Fetch all orders
+const todosLosPedidos = await getStatsDashboard();
+
+// Filter to last 7 days (client-side)
+const hace7Dias = new Date();
+hace7Dias.setDate(hace7Dias.getDate() - 7);
+
+const pedidosRecientes = todosLosPedidos.filter(
+  p => new Date(p.created_at) >= hace7Dias
+);
+
+// Get official dish names for normalization
+const platos = await getPlatosConPrecios();
+const nombresOficiales = platos.map(p => p.nombre);
+
+// Calculate statistics
+const stats = calcularStats(pedidosRecientes, nombresOficiales);
+
+console.log(`Total revenue: S/ ${stats.totalIngresos.toFixed(2)}`);
+console.log(`Success rate: ${stats.tasaExito}%`);
+console.log(`Top dish: ${stats.topPlatos[0]?.nombre} (${stats.topPlatos[0]?.unidades} units)`);
+```
+
+```javascript Kanban Board
+import { getPedidosActivos, updateEstadoPedido } from '../services/pedidosService';
+import { webhookPedidoAceptado, webhookPedidoListo } from '../services/webhookService';
+
+// Load active orders
+const pedidos = await getPedidosActivos();
+
+// Group by status for Kanban columns
+const pendientes = pedidos.filter(p => p.estado_pedido === 'pendiente');
+const enCocina = pedidos.filter(p => p.estado_pedido === 'cocina');
+const porEntregar = pedidos.filter(p => p.estado_pedido === 'entregar');
+
+// Accept an order
+async function aceptarPedido(pedido) {
+  const actualizado = await updateEstadoPedido(pedido.id, 'cocina');
+  await webhookPedidoAceptado(actualizado);
+  return actualizado;
+}
+
+// Mark as ready
+async function marcarListo(pedido) {
+  const actualizado = await updateEstadoPedido(pedido.id, 'entregar');
+  await webhookPedidoListo(actualizado);
+  return actualizado;
+}
+```
+
+```javascript History with Filters
+import { getPedidosHistorial } from '../services/pedidosService';
+
+// Get Yape and Plin orders only
+const pedidosDigitales = await getPedidosHistorial({
+  pagos: ['Yape', 'Plin']
+});
+
+// Filter by date range (client-side)
+const inicioMes = new Date();
+inicioMes.setDate(1);
+inicioMes.setHours(0, 0, 0, 0);
+
+const pedidosMes = pedidosDigitales.filter(
+  p => new Date(p.created_at) >= inicioMes
+);
+
+console.log(`Digital payments this month: ${pedidosMes.length}`);
+```
+
+```javascript Cancel Order
+import { cancelarPedido } from '../services/pedidosService';
+import { webhookPedidoCancelado } from '../services/webhookService';
+
+async function handleCancelar(pedidoId) {
+  try {
+    const pedidoCancelado = await cancelarPedido(pedidoId);
+    await webhookPedidoCancelado(pedidoCancelado);
+    console.log('Order cancelled successfully');
+  } catch (error) {
+    console.error('Failed to cancel order:', error);
+  }
+}
+```
+
+</CodeGroup>

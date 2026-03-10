@@ -1,0 +1,217 @@
+---
+title: 'Environment Variables'
+description: 'Configure required environment variables for Lurwis CRM'
+---
+
+## Overview
+
+Lurwis CRM requires four environment variables to connect to Supabase and webhook services. All variables use the `VITE_` prefix since the application is built with Vite.
+
+<Warning>
+  Never commit your `.env` file to version control. Keep your credentials secure.
+</Warning>
+
+## Required Variables
+
+### Supabase Configuration
+
+<ParamField path="VITE_SUPABASE_URL" type="string" required>
+  Your Supabase project URL
+  
+  **Where to find it:**
+  1. Go to your Supabase project dashboard
+  2. Navigate to Settings → API
+  3. Copy the URL under "Project URL"
+  
+  **Example:**
+  ```bash
+  VITE_SUPABASE_URL=https://abcdefghijklmnop.supabase.co
+  ```
+</ParamField>
+
+<ParamField path="VITE_SUPABASE_ANON_KEY" type="string" required>
+  Your Supabase anonymous (public) key
+  
+  **Where to find it:**
+  1. Go to your Supabase project dashboard
+  2. Navigate to Settings → API
+  3. Copy the key under "Project API keys" → "anon public"
+  
+  **Example:**
+  ```bash
+  VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+  ```
+  
+  <Note>
+    This is safe to expose in client-side code. Use Row Level Security (RLS) in Supabase to protect your data.
+  </Note>
+</ParamField>
+
+### Webhook Configuration
+
+<ParamField path="VITE_WEBHOOK_BASE_URL" type="string">
+  Base URL for your webhook server (N8N, Make, or Zapier)
+  
+  **When to use:**
+  - Required if you want the CRM to send order status updates back to your WhatsApp bot
+  - Optional if you only need to receive orders (one-way integration)
+  
+  **Example:**
+  ```bash
+  VITE_WEBHOOK_BASE_URL=https://your-n8n-instance.com
+  ```
+  
+  <Note>
+    If this variable is not set, the CRM will log a warning but continue to function. Webhook events will not be sent.
+  </Note>
+</ParamField>
+
+<ParamField path="VITE_WEBHOOK_SECRET" type="string">
+  Secret token for authenticating webhook requests
+  
+  **Purpose:**
+  - Sent in the `x-webhook-secret` header with every webhook request
+  - Your webhook server should validate this to ensure requests come from your CRM
+  
+  **Example:**
+  ```bash
+  VITE_WEBHOOK_SECRET=your-secret-token-here
+  ```
+  
+  **How to validate (N8N example):**
+  ```javascript
+  // In your N8N workflow
+  const receivedSecret = $request.headers['x-webhook-secret'];
+  const expectedSecret = 'your-secret-token-here';
+  
+  if (receivedSecret !== expectedSecret) {
+    return { error: 'Unauthorized' };
+  }
+  ```
+</ParamField>
+
+## Setup Instructions
+
+<Steps>
+  <Step title="Create .env file">
+    In your project root directory, create a file named `.env`:
+    
+    ```bash
+    touch .env
+    ```
+  </Step>
+  
+  <Step title="Add your variables">
+    Open `.env` and add all required variables:
+    
+    ```bash
+    # Supabase Configuration
+    VITE_SUPABASE_URL=https://your-project.supabase.co
+    VITE_SUPABASE_ANON_KEY=your-anon-key-here
+    
+    # Webhook Configuration (optional)
+    VITE_WEBHOOK_BASE_URL=https://your-webhook-server.com
+    VITE_WEBHOOK_SECRET=your-webhook-secret
+    ```
+  </Step>
+  
+  <Step title="Restart your development server">
+    After adding or modifying environment variables, restart your dev server:
+    
+    ```bash
+    npm run dev
+    ```
+  </Step>
+</Steps>
+
+## Validation
+
+The CRM automatically validates that Supabase credentials are present on startup. Check your browser console:
+
+<CodeGroup>
+```javascript Error Message
+// If VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing:
+[Supabase] Faltan las variables de entorno VITE_SUPABASE_URL y/o VITE_SUPABASE_ANON_KEY.
+Copia .env.example → .env y rellena tus credenciales.
+```
+
+```javascript Success
+// No error messages means configuration is valid
+// The app will connect to Supabase successfully
+```
+</CodeGroup>
+
+## Environment-Specific Configuration
+
+### Development
+
+Use your development/staging Supabase project:
+
+```bash
+VITE_SUPABASE_URL=https://dev-project.supabase.co
+VITE_SUPABASE_ANON_KEY=dev-anon-key
+```
+
+### Production
+
+For production builds, set environment variables in your hosting platform:
+
+<Tabs>
+  <Tab title="Vercel">
+    1. Go to your project settings
+    2. Navigate to "Environment Variables"
+    3. Add each variable with production values
+  </Tab>
+  
+  <Tab title="Netlify">
+    1. Go to Site settings → Build & deploy
+    2. Scroll to "Environment variables"
+    3. Add each variable with production values
+  </Tab>
+  
+  <Tab title="Docker">
+    Pass environment variables in your `docker run` command:
+    
+    ```bash
+    docker run -e VITE_SUPABASE_URL=https://... \
+               -e VITE_SUPABASE_ANON_KEY=... \
+               your-crm-image
+    ```
+  </Tab>
+</Tabs>
+
+## Security Best Practices
+
+<Warning>
+  **Never expose these in your code:**
+  - `SUPABASE_SERVICE_ROLE_KEY` (server-side only)
+  - Database passwords
+  - Private API keys
+</Warning>
+
+<Note>
+  The `VITE_SUPABASE_ANON_KEY` is safe to expose in client-side code because:
+  - It's designed for public access
+  - Supabase Row Level Security (RLS) protects your data
+  - All requests are validated against your RLS policies
+</Note>
+
+## Troubleshooting
+
+### Variables not loading
+
+- Ensure variable names start with `VITE_` (Vite requirement)
+- Restart your dev server after changes
+- Check there are no spaces around the `=` sign
+
+### Connection errors
+
+- Verify your Supabase URL is correct (should end in `.supabase.co`)
+- Check that your anon key is the full JWT token
+- Ensure your Supabase project is active (not paused)
+
+## Next Steps
+
+- [Set up Authentication](/configuration/authentication)
+- [Configure Webhooks](/configuration/webhooks)
+- [Complete Supabase Setup](/configuration/supabase-setup)
